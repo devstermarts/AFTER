@@ -273,7 +273,7 @@ class Trainer(nn.Module):
                         all_losses_sum[k] = 0.
                         all_losses_count[k] = 0
 
-                if (not self.step % 10000):
+                if (not self.step % 10000): #Validation all 10000 steps.
                     print("Validation Step")
 
                     if validloader is not None:
@@ -307,7 +307,7 @@ class Trainer(nn.Module):
                         "opt_dis_state": self.opt_dis.state_dict()
                     }
 
-                    if not (self.step % 50000):
+                    if not (self.step % 10000): #Write checkpoint all 10000 steps. Was 50000.
                         torch.save(
                             d, tensorboard + "/checkpoint" + str(self.step) +
                             ".pt")
