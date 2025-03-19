@@ -1,0 +1,14 @@
+from __gin__ import dynamic_registration
+
+import after
+from after import diffusion
+ 
+diffusion.model.Base.fit: 
+    ## Cycle loss
+    cycle_consistency = True
+    cycle_loss_type = 'mse'
+    cycle_mode = 'interpolant'
+    cycle_scaling = 'natural'
+    cycle_start_step = %PHASE_1_STEP
+    cycle_swap_target = 'cond'
+    cycle_weights = [5.0, 0.]
