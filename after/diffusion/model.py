@@ -70,16 +70,9 @@ class Base(nn.Module):
 
     def diffusion_step(self, x1, time_cond, cond):
         pass
-    
-    def cycle_step(self,
-                   interpolant,
-                   t,
-                   time_cond,
-                   cond,
-                   cycle_mode,
-                   cycle_swap_target,
-                   cycle_loss_type,
-                   cycle_scaling):
+
+    def cycle_step(self, interpolant, t, time_cond, cond, cycle_mode,
+                   cycle_swap_target, cycle_loss_type, cycle_scaling):
         pass
 
     def cfgdrop(self, datas, bsize, drop_targets=[], drop_rate=0.2):
@@ -166,7 +159,7 @@ class Base(nn.Module):
 
         x1_cond = x1_cond.to(device)
         x1_time_cond = x1_time_cond.to(device)
-        
+
         if self.time_transform is not None:
             x1_time_cond = self.time_transform(x1_time_cond)
 
@@ -249,8 +242,7 @@ class Base(nn.Module):
         self.use_ema = use_ema
         self.max_steps = max_steps
 
-        self.init_train(lr=lr,
-                        dataloader=validloader)
+        self.init_train(lr=lr, dataloader=validloader)
 
         if restart_step is not None and restart_step > 0:
             state_dict = torch.load(f"{model_dir}/checkpoint" +
@@ -284,7 +276,7 @@ class Base(nn.Module):
         if self.use_ema:
             params = list(self.net.parameters())
             self.ema = ExponentialMovingAverage(params, decay=0.999)
-            
+
         # Loging
         logger = SummaryWriter(log_dir=model_dir + "/logs")
         self.tepoch = tqdm(total=max_steps, unit="batch")
@@ -298,22 +290,24 @@ class Base(nn.Module):
 
         for e in range(n_epochs):
             for batch in dataloader:
-                if (self.step > stop_training_encoder_step and self.train_encoder == True):
+                if (self.step > stop_training_encoder_step
+                        and self.train_encoder == True):
                     print("detaching encoder")
                     for param in self.encoder.parameters():
                         param.requires_grad = False
                     self.encoder.eval()
                     self.train_encoder = False
 
-                if (self.step > stop_training_encoder_time_step and self.train_encoder_time == True):
+                if (self.step > stop_training_encoder_time_step
+                        and self.train_encoder_time == True):
                     print("detaching encoder")
                     for param in self.encoder_time.parameters():
                         param.requires_grad = False
                     self.encoder_time.eval()
                     self.train_encoder_time = False
 
-                x1, x1_cond, x1_time_cond= self.prep_data(
-                    batch, device=self.device)
+                x1, x1_cond, x1_time_cond = self.prep_data(batch,
+                                                           device=self.device)
 
                 if shuffle_zsem is not None:
                     for n in range(x1_cond.shape[0]):
@@ -330,27 +324,23 @@ class Base(nn.Module):
                 if self.step > stop_training_encoder_step or not train_encoder:
                     with torch.no_grad():
                         cond, cond_mean, cond_reg = self.encoder(
-                            x1_cond, return_full = True )
+                            x1_cond, return_full=True)
                         cond = cond + zsem_noise_aug * torch.randn_like(cond)
                 else:
-                    cond, cond_mean, cond_reg = self.encoder(
-                        x1_cond,
-                        return_full = True)
-                
-                cond = cond + zsem_noise_aug * torch.randn_like(cond)
+                    cond, cond_mean, cond_reg = self.encoder(x1_cond,
+                                                             return_full=True)
 
+                cond = cond + zsem_noise_aug * torch.randn_like(cond)
 
                 if self.step < timbre_warmup:
                     with torch.no_grad():
                         time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
-                            x1_time_cond, return_full = True
+                            x1_time_cond, return_full=True
                         ) if self.encoder_time is not None else None
                 else:
                     time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
-                        x1_time_cond, return_full = True
+                        x1_time_cond, return_full=True
                     ) if self.encoder_time is not None else None
-
-                
 
                 time_cond, _ = self.vector_quantizer(
                     time_cond) if self.vector_quantizer is not None else (
@@ -360,7 +350,8 @@ class Base(nn.Module):
                     if self.step < timbre_warmup:
                         drop_targets = [0]
                     else:
-                        drop_targets = [0, 1] if drop_targets == "both" else [1]
+                        drop_targets = [0, 1
+                                        ] if drop_targets == "both" else [1]
 
                     cond_drop, time_cond_drop = self.cfgdrop(
                         [cond, time_cond],
@@ -373,12 +364,12 @@ class Base(nn.Module):
                         self.step % update_classifier_every
                         == 0) and self.classifier is not None:
 
-                    cond = self.classifier(time_cond.detach())
+                    cond_pred = self.classifier(time_cond.detach())
 
                     if adversarial_loss == "cosine":
                         classifier_loss = (
                             1 - torch.nn.functional.cosine_similarity(
-                                cond_pred, cond_mean.detach(), dim=1,
+                                cond_pred, cond.detach(), dim=1,
                                 eps=1e-8)).mean()
 
                     elif adversarial_loss == "mse":
@@ -401,41 +392,28 @@ class Base(nn.Module):
                             time_cond_drop)
 
                     if self.step > timbre_warmup and self.classifier is not None:
-                        cond_pred, _ = self.classifier(time_cond)
+                        cond_pred = self.classifier(time_cond)
                         if adversarial_loss == "cosine":
                             classifier_loss = (
                                 1 - torch.nn.functional.cosine_similarity(
-                                    cond_pred,
-                                    cond.detach(),
-                                    dim=1,
+                                    cond_pred, cond.detach(), dim=1,
                                     eps=1e-8)).mean()
-                            
+
                         elif adversarial_loss == "mse":
                             classifier_loss = torch.nn.functional.mse_loss(
-                                cond_pred,
-                                cond.detach(),
-                                reduction='mean')
+                                cond_pred, cond.detach(), reduction='mean')
 
                     else:
                         classifier_loss = torch.tensor(0.)
                         adversarial_weight_cur = 0.
 
                     diffusion_loss, interpolant, t = self.diffusion_step(
-                        x1,
-                        time_cond=time_cond_drop,
-                        cond=cond_drop)
+                        x1, time_cond=time_cond_drop, cond=cond_drop)
 
                     if cycle_consistency and self.step > cycle_start_step:
                         cond_cycle_loss, time_cond_cycle_loss = self.cycle_step(
-                            interpolant,
-                            t,
-                            time_cond,
-                            cond,
-                            cond_mean,
-                            cycle_mode,
-                            cycle_swap_target,
-                            cycle_loss_type,
-                            cycle_scaling)
+                            interpolant, t, time_cond, cond, cycle_mode,
+                            cycle_swap_target, cycle_loss_type, cycle_scaling)
 
                     else:
                         cond_cycle_loss = torch.tensor(0.)
@@ -511,7 +489,9 @@ class Base(nn.Module):
                                 batch, device=self.device)
 
                             cond = self.encoder(x1_cond)
-                            time_cond = self.encoder_time(x1_time_cond) if self.encoder_time is not None else x1_time_cond
+                            time_cond = self.encoder_time(
+                                x1_time_cond
+                            ) if self.encoder_time is not None else x1_time_cond
 
                             if self.step < timbre_warmup:
                                 time_cond = self.drop_value * torch.ones_like(
@@ -525,7 +505,7 @@ class Base(nn.Module):
                             }
 
                             if self.classifier is not None:
-                                cond_pred, _ = self.classifier(time_cond)
+                                cond_pred = self.classifier(time_cond)
                                 if adversarial_loss == "cosine":
                                     classifier_loss = (
                                         1 -
@@ -612,7 +592,7 @@ class RectifiedFlow(Base):
             permutation = torch.randperm(cond.shape[0])
             time_cond_target = time_cond
             cond_target = cond[permutation]
-            
+
         elif cycle_swap_target == "alternate":
             n = time_cond.shape[0]
             indices = torch.randperm(time_cond.shape[0])
@@ -630,13 +610,12 @@ class RectifiedFlow(Base):
                                          cond=cond_target)
         x_transfer = interpolant + (1 - t) * model_output_transfer
 
-
-        cond_rec = self.encoder(x_transfer, return_full = False)
+        cond_rec = self.encoder(x_transfer)
 
         if self.post_encoder is not None:
             cond_rec_mean = self.post_encoder(cond_rec_mean)
 
-        _, time_cond_rec, _ = self.encoder_time(x_transfer, return_mean=True)
+        time_cond_rec = self.encoder_time(x_transfer)
 
         if cycle_loss_type == "mse":
             cond_cycle_loss = torch.nn.functional.mse_loss(
@@ -647,15 +626,13 @@ class RectifiedFlow(Base):
 
         elif cycle_loss_type == "cosine":
             cond_cycle_loss = (1 - torch.nn.functional.cosine_similarity(
-                cond_rec, cond_target.detach(), dim=1,
-                eps=1e-8)).mean()
+                cond_rec, cond_target.detach(), dim=1, eps=1e-8)).mean()
 
             time_cond_cycle_loss = (1 - torch.nn.functional.cosine_similarity(
                 time_cond_rec, time_cond_target.detach(), dim=1,
                 eps=1e-8)).mean()
         else:
             raise ValueError("Invalid cycle loss type : " + cycle_loss_type)
-            
 
         if cycle_scaling == "natural":
             with torch.no_grad():
@@ -665,11 +642,11 @@ class RectifiedFlow(Base):
                                                torch.ones_like(cond),
                                                time=t)
 
-                model_output_notimecond = self.net(
-                    interpolant,
-                    time_cond=self.drop_value * torch.ones_like(time_cond),
-                    cond=cond,
-                    time=t)
+                model_output_notimecond = self.net(interpolant,
+                                                   time_cond=self.drop_value *
+                                                   torch.ones_like(time_cond),
+                                                   cond=cond,
+                                                   time=t)
 
                 model_output = self.net(interpolant,
                                         time_cond=time_cond,
@@ -685,7 +662,8 @@ class RectifiedFlow(Base):
                 model_output_notimecond.detach(),
                 reduction="none").mean((1, 2))
 
-            scaling_cond[t.squeeze() > 0.6] = torch.zeros_like(scaling_cond[t.squeeze() > 0.6])
+            scaling_cond[t.squeeze() > 0.6] = torch.zeros_like(
+                scaling_cond[t.squeeze() > 0.6])
 
             cond_cycle_loss = scaling_cond[:, None] * cond_cycle_loss
 
@@ -741,7 +719,6 @@ class RectifiedFlow(Base):
             time_cond, self.drop_value * torch.ones_like(time_cond), time_cond,
             self.drop_value * torch.ones_like(time_cond)
         ])
-
 
         dx = self.net(full_x,
                       time=full_time,

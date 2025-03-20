@@ -6,7 +6,6 @@ from tqdm import tqdm
 import numpy as np
 
 
-
 class SimpleDataset(torch.utils.data.Dataset):
 
     def __init__(
@@ -41,7 +40,8 @@ class SimpleDataset(torch.utils.data.Dataset):
             self.keys = list(txn.cursor().iternext(values=False))
 
         if split in ["train", "validation"]:
-            train_ids, valid_ids = train_test_split(list(range(len(self.keys))),
+            train_ids, valid_ids = train_test_split(list(range(len(
+                self.keys))),
                                                     test_size=validation_size,
                                                     random_state=42)
 
@@ -146,12 +146,11 @@ class CombinedDataset(torch.utils.data.Dataset):
         elif path_dict is not None:
             self.datasets = {
                 k:
-                SimpleDataset(
-                    v["path"],
-                    keys=keys,
-                    max_samples=num_samples,
-                    init_cache=init_cache,
-                    split=config)
+                SimpleDataset(v["path"],
+                              keys=keys,
+                              max_samples=num_samples,
+                              init_cache=init_cache,
+                              split=config)
                 for k, v in path_dict.items()
             }
             info_dict = path_dict
@@ -170,8 +169,10 @@ class CombinedDataset(torch.utils.data.Dataset):
                 info_dict[k]["freq"] = 1
 
         for k, v in self.datasets.items():
-            print(k, " : ", len(v))
-            
+            print(k, " : ", len(v), "examples ")
+
+        self.keys = {k: v.keys for k, v in self.datasets.items()}
+
         self.len = int(np.sum([len(v) for v in self.keys.values()]))
 
         self.weights = {
@@ -210,8 +211,7 @@ class CombinedDataset(torch.utils.data.Dataset):
                 generator=torch.Generator().manual_seed(42))
         else:
             raise ValueError("config must be either train or val")
-        
-        
+
     def build_cache(self):
         print("building cache")
         self.data = {}
@@ -230,4 +230,3 @@ class CombinedDataset(torch.utils.data.Dataset):
         data["label"] = dataset_id
 
         return data
-

@@ -12,7 +12,6 @@ from tqdm import tqdm
 
 from absl import flags, app
 
-
 FLAGS = flags.FLAGS
 
 # MODEL
@@ -27,8 +26,10 @@ flags.DEFINE_integer("bsize", 64, "Batch size.")
 flags.DEFINE_integer("n_signal", 128, "Number of signals.")
 
 # DATASET
-flags.DEFINE_multi_string("db_path", None, "Database path. Use multiple for combined datasets.")
-flags.DEFINE_multi_string("freqs", None, "Sampling frequencies for multiple datasets.")
+flags.DEFINE_multi_string(
+    "db_path", None, "Database path. Use multiple for combined datasets.")
+flags.DEFINE_multi_string("freqs", None,
+                          "Sampling frequencies for multiple datasets.")
 flags.DEFINE_string("out_path", "./after_runs", "Output path.")
 flags.DEFINE_string("emb_model_path", None, "Path to the embedding model.")
 
@@ -46,7 +47,7 @@ def add_gin_extension(config_name: str) -> str:
 
 
 def main(argv):
-    
+
     print(FLAGS.config)
 
     gin.parse_config_files_and_bindings(
@@ -74,7 +75,9 @@ def main(argv):
         z = emb_model.encode(dummy)
         ae_emb_size = z.shape[1]
         ae_ratio = 4096 // z.shape[-1]
-        
+
+    print("using a codec with - compression ratio : ", ae_ratio,
+          " - emb size : ", ae_emb_size)
 
     with gin.unlock_config():
         gin.bind_parameter("diffusion.utils.collate_fn.ae_ratio", ae_ratio)
@@ -102,7 +105,6 @@ def main(argv):
                  ] + (["waveform"] if blender.time_transform is not None else
                       []) + (["midi"] if structure_type == "midi" else [])
 
-    
     ## DATASET
     augmentation_keys = FLAGS.augmentation_keys
     print("Augmentation keys", augmentation_keys)
@@ -115,14 +117,7 @@ def main(argv):
     data_keys = data_keys + augmentation_keys
 
     if len(FLAGS.db_path) > 1:
-        main_folder = FLAGS.db_folder
-        audio_folders = [
-            os.path.join(main_folder, f) for f in os.listdir(main_folder)
-        ]
-        db_paths = [f + "/ae_44k" for f in audio_folders]
-
-
-        path_dict = {f: {"name": f, "path": f} for f in db_paths}
+        path_dict = {f: {"name": f, "path": f} for f in FLAGS.db_path}
 
         dataset = CombinedDataset(
             path_dict=path_dict,
@@ -147,16 +142,16 @@ def main(argv):
 
     else:
         dataset = SimpleDataset(path=FLAGS.db_path[0],
-                                      keys=data_keys,
-                                      max_samples=FLAGS.max_samples,
-                                      init_cache=FLAGS.use_cache,
-                                      split="train")
+                                keys=data_keys,
+                                max_samples=FLAGS.max_samples,
+                                init_cache=FLAGS.use_cache,
+                                split="train")
 
         valset = SimpleDataset(path=FLAGS.db_path[0],
-                                     keys=data_keys,
-                                     max_samples=FLAGS.max_samples,
-                                     split="validation",
-                                     init_cache=FLAGS.use_cache)
+                               keys=data_keys,
+                               max_samples=FLAGS.max_samples,
+                               split="validation",
+                               init_cache=FLAGS.use_cache)
         train_sampler, val_sampler = None, None
 
     train_loader = torch.utils.data.DataLoader(
@@ -177,7 +172,8 @@ def main(argv):
         collate_fn=collate_fn,
         sampler=val_sampler if val_sampler is not None else None)
 
-    print(next(iter(train_loader))["x"].shape)
+    print("Data shape : ", dataset[0]["z"].shape)
+    print("Croped shape : ", next(iter(train_loader))["x"].shape)
 
     try:
         dummy = collate_fn([])

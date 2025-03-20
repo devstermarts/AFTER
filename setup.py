@@ -3,9 +3,8 @@ import subprocess
 
 import setuptools
 
-# imports __version__
-#exec(open('rave/version.py').read())
-__version__ = "1.0.0" 
+__version__ = "1.0.0"
+
 with open("README.md", "r") as readme:
     readme = readme.read()
 

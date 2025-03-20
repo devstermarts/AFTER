@@ -3,7 +3,8 @@ import sys
 from absl import app
 
 AVAILABLE_SCRIPTS = [
-    'train', 'prepare_dataset', 'update_dataset', 'train_autoencoder', 'export_autoencoder', 'export'
+    'train', 'prepare_dataset', 'update_dataset', 'train_autoencoder',
+    'export_autoencoder', 'export'
 ]
 
 
