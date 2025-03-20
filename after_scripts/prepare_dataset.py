@@ -57,7 +57,7 @@ flags.DEFINE_bool('cut_silences',
                   required=False)
 
 flags.DEFINE_integer('num_signal',
-                     131072,
+                     262144,
                      help='Number of audio samples to use during training')
 
 flags.DEFINE_integer('sample_rate',
@@ -90,7 +90,7 @@ flags.DEFINE_bool('dyndb',
                   help="Allow the database to grow dynamically")
 
 flags.DEFINE_bool('save_waveform',
-                  default=True,
+                  default=False,
                   help="Save the waveform in the database")
 
 
@@ -192,7 +192,6 @@ def main(dummy):
     for i, (file, midi_file, metadata) in enumerate(
             zip(tqdm(audio_files), midi_files, metadatas)):
 
-        print(file)
         try:
             audio = librosa.load(file, sr=FLAGS.sample_rate)[0]
         except:

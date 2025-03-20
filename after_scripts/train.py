@@ -23,7 +23,7 @@ flags.DEFINE_string("model", "rectified", "Model type.")
 
 # Training
 flags.DEFINE_integer("bsize", 64, "Batch size.")
-flags.DEFINE_integer("n_signal", 128, "Number of signals.")
+flags.DEFINE_integer("n_signal", 128, "Training length in number of latent steps")
 
 # DATASET
 flags.DEFINE_multi_string(
