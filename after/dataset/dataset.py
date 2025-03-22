@@ -23,7 +23,6 @@ class SimpleDataset(torch.utils.data.Dataset):
         super().__init__()
 
         self.num_sequential = num_sequential
-        self.buffer_keys = keys
         self.max_samples = max_samples
         self.recache_every = recache_every
         self.recache_counter = 0
@@ -61,11 +60,21 @@ class SimpleDataset(torch.utils.data.Dataset):
         self.indexes = list(range(len(self.keys)))
         self.cached = False
 
+        if keys == "all":
+            self.buffer_keys = self.get_keys()
+        else:
+            self.buffer_keys = keys
+
         if init_cache:
             self.build_cache()
 
     def __len__(self):
         return len(self.indexes)
+
+    def get_keys(self):
+        with self.env.begin() as txn:
+            ae = AudioExample(txn.get(self.keys[0]))
+            return ae.get_keys()
 
     def build_cache(self):
         self.cached = False

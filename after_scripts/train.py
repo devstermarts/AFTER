@@ -23,13 +23,14 @@ flags.DEFINE_string("model", "rectified", "Model type.")
 
 # Training
 flags.DEFINE_integer("bsize", 64, "Batch size.")
-flags.DEFINE_integer("n_signal", 128, "Training length in number of latent steps")
+flags.DEFINE_integer("n_signal", 128,
+                     "Training length in number of latent steps")
 
 # DATASET
 flags.DEFINE_multi_string(
     "db_path", None, "Database path. Use multiple for combined datasets.")
-flags.DEFINE_multi_string("freqs", None,
-                          "Sampling frequencies for multiple datasets.")
+flags.DEFINE_multi_float("freqs", None,
+                         "Sampling frequencies for multiple datasets.")
 flags.DEFINE_string("out_path", "./after_runs", "Output path.")
 flags.DEFINE_string("emb_model_path", None, "Path to the embedding model.")
 
@@ -37,7 +38,8 @@ flags.DEFINE_string("emb_model_path", None, "Path to the embedding model.")
 flags.DEFINE_bool("use_cache", False, "Whether to cache the dataset.")
 flags.DEFINE_integer("max_samples", None, "Maximum number of samples.")
 flags.DEFINE_integer("num_workers", 8, "Number of workers.")
-flags.DEFINE_list("augmentation_keys", [], "List of augmentation keys.")
+flags.DEFINE_multi_string("augmentation_keys", None,
+                          "List of augmentation keys.")
 
 
 def add_gin_extension(config_name: str) -> str:
@@ -107,14 +109,18 @@ def main(argv):
 
     ## DATASET
     augmentation_keys = FLAGS.augmentation_keys
-    print("Augmentation keys", augmentation_keys)
 
-    with gin.unlock_config():
-        gin.bind_parameter(
-            "diffusion.utils.collate_fn.timbre_augmentation_keys",
-            augmentation_keys)
+    if augmentation_keys is not None:
+        print("Augmentation keys", augmentation_keys)
 
-    data_keys = data_keys + augmentation_keys
+        with gin.unlock_config():
+            gin.bind_parameter(
+                "diffusion.utils.collate_fn.timbre_augmentation_keys",
+                augmentation_keys)
+
+        data_keys = data_keys + augmentation_keys
+    else:
+        print("No augmentation keys")
 
     if len(FLAGS.db_path) > 1:
         path_dict = {f: {"name": f, "path": f} for f in FLAGS.db_path}

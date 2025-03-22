@@ -118,6 +118,9 @@ class AudioExample(object):
     def as_dict(self):
         return {k: self.get(k) for k in self.ae.buffers}
 
+    def get_keys(self):
+        return list(self.ae.buffers.keys())
+
     def __str__(self) -> str:
         repr = []
         repr.append("AudioExample(")

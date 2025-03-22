@@ -604,18 +604,33 @@ class RectifiedFlow(Base):
         time_cond_target = time_cond_target.detach()
         cond_target = cond_target.detach()
 
-        model_output_transfer = self.net(interpolant,
-                                         time=t,
-                                         time_cond=time_cond_target,
-                                         cond=cond_target)
-        x_transfer = interpolant + (1 - t) * model_output_transfer
+        if cycle_mode == "interpolant":
+            model_output_transfer = self.net(interpolant,
+                                             time=t,
+                                             time_cond=time_cond_target,
+                                             cond=cond_target)
+            x_transfer = interpolant + (1 - t) * model_output_transfer
 
-        cond_rec = self.encoder(x_transfer)
+            cond_rec = self.encoder(x_transfer)
+        elif cycle_mode == "sample":
+            x0 = torch.randn_like(interpolant)
+            with torch.no_grad():
+                x_transfer_onestep = self.sample(x0,
+                                                 cond_target,
+                                                 time_cond_target,
+                                                 nb_steps=2,
+                                                 guidance_cond_factor=1.,
+                                                 guidance_joint_factor=1.,
+                                                 total_guidance=1.).detach()
 
-        if self.post_encoder is not None:
-            cond_rec_mean = self.post_encoder(cond_rec_mean)
-
-        time_cond_rec = self.encoder_time(x_transfer)
+            interpolant = (1 - t) * x0 + t * x_transfer_onestep
+            model_output_transfer = self.net(interpolant,
+                                             time=t,
+                                             time_cond=time_cond_target,
+                                             cond=cond_target)
+            x_transfer = interpolant + (1 - t) * model_output_transfer
+            cond_rec = self.encoder(x_transfer)
+            time_cond_rec = self.encoder_time(x_transfer)
 
         if cycle_loss_type == "mse":
             cond_cycle_loss = torch.nn.functional.mse_loss(
@@ -623,6 +638,19 @@ class RectifiedFlow(Base):
 
             time_cond_cycle_loss = torch.nn.functional.mse_loss(
                 time_cond_rec, time_cond_target, reduction="none")
+
+        elif cycle_loss_type == "mse_margin":
+            cond_cycle_loss = torch.maximum(
+                torch.tensor(0.05),
+                torch.nn.functional.mse_loss(cond_rec,
+                                             cond_target.detach(),
+                                             reduction='none'))
+
+            time_cond_cycle_loss = torch.maximum(
+                torch.tensor(0.05),
+                torch.nn.functional.mse_loss(time_cond_rec,
+                                             time_cond_target,
+                                             reduction="none"))
 
         elif cycle_loss_type == "cosine":
             cond_cycle_loss = (1 - torch.nn.functional.cosine_similarity(
