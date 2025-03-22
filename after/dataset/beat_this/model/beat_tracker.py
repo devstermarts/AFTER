@@ -129,8 +129,8 @@ class BeatThis(nn.Module):
         in_dim: int,
         out_dim: int,
         partial_transformers: bool = True,
-        head_dim: int | None = 32,
-        rotary_embed: RotaryEmbedding | None = None,
+        head_dim = 32,
+        rotary_embed = None,
         dropout: float = 0.1,
     ) -> nn.Module:
         if partial_transformers and (head_dim is None or rotary_embed is None):

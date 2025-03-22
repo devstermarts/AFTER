@@ -20,3 +20,4 @@ absl-py
 pedalboard
 librosa
 nn_tilde
+rotary_embedding_torch

@@ -106,6 +106,37 @@ def simple_midi(audio_folder, midi_folder, extensions, exclude):
     return audio_files, midi_files, metadatas
 
 
+import numpy as np
+def vital_parser(audio_folder, midi_folder, extensions, exclude):
+    audio_files, _, _ = simple_audio(audio_folder, midi_folder, extensions, exclude)
+    midis, metadatas= [],[]
+    midi_list = None
+    
+    for audio in tqdm(audio_files):
+        datafile = audio.replace(".wav", ".npy")
+        allmetadata = np.load(datafile, allow_pickle=True).item()
+        del(allmetadata["parameters"])
+        
+        all_metadata = {k:v for k, v in allmetadata.items() if k in ["description", "tags", "categories", "name", "bank"]}
+        midi_index = int(datafile.split("_")[-1].split(".")[0])
+        
+        if midi_list is None:
+            folder = "/".join(datafile.split('/')[:5]) 
+            midi_seqs_file = os.path.join(folder, "midi_seqs.txt")
+
+            with open(midi_seqs_file, "r") as file:
+                midi_list = [line.strip() for line in file.readlines()]
+
+        midi_path = midi_list[midi_index]
+        
+        midis.append(midi_path)
+        metadata = {"path": audio, "midi_path": midi_path}
+        metadata.update(all_metadata)
+        metadatas.append(metadata)
+        
+    print(metadatas[0])
+    return audio_files, midis, metadatas
+
 
 def get_parser(parser_name):
     if parser_name == "simple_audio":
@@ -114,5 +145,9 @@ def get_parser(parser_name):
         return simple_midi
     if parser_name == "slakh":
         return slakh
+    if parser_name == "vital_parser":
+        return vital_parser
     else:
         raise ValueError(f"Parser {parser_name} not available")
+
+

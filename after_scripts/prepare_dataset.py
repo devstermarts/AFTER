@@ -90,10 +90,6 @@ flags.DEFINE_multi_string(
     default=['wav', 'opus', 'mp3', 'aac', 'flac'],
     help='Extension to search for in the input directory')
 
-flags.DEFINE_bool('dyndb',
-                  default=False,
-                  help="Allow the database to grow dynamically")
-
 flags.DEFINE_bool('save_waveform',
                   default=False,
                   help="Save the waveform in the database")
@@ -104,7 +100,6 @@ flags.DEFINE_bool(
     False,
     help='Use basic pitch to obtain midi scores from the audio files',
     required=False)
-
 
 
 flags.DEFINE_bool(
@@ -124,7 +119,7 @@ flags.DEFINE_integer('num_augments',
 
 
 flags.DEFINE_integer('num_multiprocesses',
-                  default=8,
+                  default=16,
                   help="Number of processes for the data augmentation")
 flags.DEFINE_multi_string('descriptors',
                             default=["centroid", "bandwidth", "rolloff", "flatness"],
@@ -217,7 +212,7 @@ def main(dummy):
             zip(tqdm(audio_files), midi_files, metadatas)):
 
         try:
-            audio = librosa.load(file, sr=FLAGS.sample_rate)[0]
+            audio = librosa.load(file, sr=FLAGS.sample_rate, mono=True)[0]
         except:
             print("error loading file : ", file)
             continue

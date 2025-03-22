@@ -42,7 +42,7 @@ class Postprocessor:
         self,
         beat: torch.Tensor,
         downbeat: torch.Tensor,
-        padding_mask: torch.Tensor | None = None,
+        padding_mask= None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Apply postprocessing to the input beat and downbeat tensors. Works with batched and unbatched inputs.
