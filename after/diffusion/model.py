@@ -617,6 +617,8 @@ class RectifiedFlow(Base):
             x_transfer = interpolant + (1 - t) * model_output_transfer
 
             cond_rec = self.encoder(x_transfer)
+            time_cond_rec = self.encoder_time(x_transfer)
+
         elif cycle_mode == "sample":
             x0 = torch.randn_like(interpolant)
             with torch.no_grad():
@@ -675,11 +677,11 @@ class RectifiedFlow(Base):
                                                torch.ones_like(cond),
                                                time=t)
 
-                model_output_notimecond = self.net(interpolant,
-                                                   time_cond=self.drop_value *
-                                                   torch.ones_like(time_cond),
-                                                   cond=cond,
-                                                   time=t)
+                #model_output_notimecond = self.net(interpolant,
+                #                                   time_cond=self.drop_value *
+                #                                   torch.ones_like(time_cond),
+                #                                   cond=cond,
+                #                                   time=t)
 
                 model_output = self.net(interpolant,
                                         time_cond=time_cond,
@@ -690,18 +692,18 @@ class RectifiedFlow(Base):
                 model_output_nocond.detach(),
                 reduction="none").mean((1, 2))
 
-            scaling_time_cond = torch.nn.functional.mse_loss(
-                model_output.detach(),
-                model_output_notimecond.detach(),
-                reduction="none").mean((1, 2))
+            #scaling_time_cond = torch.nn.functional.mse_loss(
+            #    model_output.detach(),
+            #    model_output_notimecond.detach(),
+            #    reduction="none").mean((1, 2))
 
             scaling_cond[t.squeeze() > 0.6] = torch.zeros_like(
                 scaling_cond[t.squeeze() > 0.6])
 
             cond_cycle_loss = scaling_cond[:, None] * cond_cycle_loss
 
-            time_cond_cycle_loss = scaling_time_cond[:, None,
-                                                     None] * time_cond_cycle_loss
+            #time_cond_cycle_loss = scaling_time_cond[:, None,
+            #                                         None] * time_cond_cycle_loss
         elif cycle_scaling == "none":
             pass
         else:
