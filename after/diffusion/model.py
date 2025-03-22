@@ -11,6 +11,7 @@ from torch_ema import ExponentialMovingAverage
 import os
 
 from einops import reduce, rearrange
+import warnings
 
 
 @gin.configurable
@@ -539,28 +540,32 @@ class Base(nn.Module):
                         x0 = self.sample_prior(x1.shape)
 
                         audio_true = self.emb_model.decode(x1.cpu()).cpu()
+                        
+                        
 
-                        for i in range(x1.shape[0]):
-                            logger.add_audio("true/" + str(i),
-                                             audio_true[i],
-                                             global_step=self.step,
-                                             sample_rate=self.sr)
-
-                        for nb_steps in [5, 40]:
-                            x1_rec = self.sample(x0,
-                                                 nb_steps=nb_steps,
-                                                 time_cond=time_cond,
-                                                 cond=cond)
-
-                            audio_rec = self.emb_model.decode(
-                                x1_rec.cpu()).cpu()
-
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
                             for i in range(x1.shape[0]):
-                                logger.add_audio("generated/" + str(nb_steps) +
-                                                 "steps/" + str(i),
-                                                 audio_rec[i],
+                                logger.add_audio("true/" + str(i),
+                                                 audio_true[i],
                                                  global_step=self.step,
                                                  sample_rate=self.sr)
+
+                            for nb_steps in [5, 40]:
+                                x1_rec = self.sample(x0,
+                                                     nb_steps=nb_steps,
+                                                     time_cond=time_cond,
+                                                     cond=cond)
+
+                                audio_rec = self.emb_model.decode(
+                                    x1_rec.cpu()).cpu()
+
+                                for i in range(x1.shape[0]):
+                                    logger.add_audio("generated/" + str(nb_steps) +
+                                                     "steps/" + str(i),
+                                                     audio_rec[i],
+                                                     global_step=self.step,
+                                                     sample_rate=self.sr)
 
                 if self.step % steps_save == 0:
                     self.save_model(model_dir)

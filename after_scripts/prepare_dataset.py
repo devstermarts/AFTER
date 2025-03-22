@@ -8,11 +8,14 @@ from after.dataset.audio_example import AudioExample
 from after.dataset.parsers import get_parser
 import os
 from tqdm import tqdm
-from after.dataset.transforms import BasicPitchPytorch
+from after.dataset.transforms import BasicPitchPytorch, PSTS, AudioDescriptors, BeatTrack
 import pickle
 import pretty_midi
 from absl import app, flags
 import copy
+from multiprocessing import Pool
+from functools import partial
+
 
 torch.set_grad_enabled(False)
 
@@ -30,16 +33,18 @@ flags.DEFINE_string('output_path',
                     required=False)
 
 flags.DEFINE_string(
-    'parser',
+    'midi_path',
     None,
     help=
-    'File parser defined in parsers.py. Use None for recursive search of audio files in the input path',
+    'Folder containing the midi files, if a midi file parser is used',
     required=False)
 
-flags.DEFINE_bool(
-    'basic_pitch_midi',
-    False,
-    help='Use basic pitch to obtain midi scores from the audio files',
+
+flags.DEFINE_string(
+    'parser',
+    "simple_audio",
+    help=
+    'File parser defined in parsers.py. Use None for recursive search of audio files in the input path',
     required=False)
 
 flags.DEFINE_multi_string('exclude', [],
@@ -57,7 +62,7 @@ flags.DEFINE_bool('cut_silences',
                   required=False)
 
 flags.DEFINE_integer('num_signal',
-                     262144,
+                     524288,
                      help='Number of audio samples to use during training')
 
 flags.DEFINE_integer('sample_rate',
@@ -75,9 +80,9 @@ flags.DEFINE_string(
     required=False)
 
 flags.DEFINE_integer('batch_size', 8, help='Number of chunks', required=False)
-flags.DEFINE_string('device',
-                    "cpu",
-                    help='device for emb_model',
+flags.DEFINE_integer('gpu',
+                    "-1",
+                    help='Cuda gpu index. Use -1 for cpu',  
                     required=False)
 
 flags.DEFINE_multi_string(
@@ -94,27 +99,36 @@ flags.DEFINE_bool('save_waveform',
                   help="Save the waveform in the database")
 
 
-def flatten(iterator: Iterable):
-    for elm in iterator:
-        for sub_elm in elm:
-            yield sub_elm
+flags.DEFINE_bool(
+    'basic_pitch_midi',
+    False,
+    help='Use basic pitch to obtain midi scores from the audio files',
+    required=False)
 
 
-def search_for_audios(
-    path_list: Sequence[str],
-    extensions: Sequence[str] = [
-        "wav", "opus", "mp3", "aac", "flac", "aif", "ogg"
-    ],
-):
-    paths = map(pathlib.Path, path_list)
-    audios = []
-    for p in paths:
-        for ext in extensions:
-            audios.append(p.rglob(f"*.{ext}"))
-    audios = flatten(audios)
-    audios = [str(a) for a in audios if 'MACOS' not in str(a)]
-    return audios
 
+flags.DEFINE_bool(
+    'beat_track',
+    False,
+    help='Use beat tracking to extract beats and downbats',
+    required=False)
+
+
+flags.DEFINE_string('waveform_augmentation',
+                  default="shift_stretch",
+                  help="Perform data augmentation for the timbre input : [none, shift, stretch, shift_stretch]")
+
+flags.DEFINE_integer('num_augments',
+                  default=4,
+                  help="Number of augmentations to perform")
+
+
+flags.DEFINE_integer('num_multiprocesses',
+                  default=8,
+                  help="Number of processes for the data augmentation")
+flags.DEFINE_multi_string('descriptors',
+                            default=["centroid", "bandwidth", "rolloff", "flatness"],
+                            help="Audio descriptors to compute")    
 
 def normalize_signal(x: np.ndarray,
                      max_gain_db: int = 30,
@@ -147,11 +161,10 @@ def get_midi(midi_data, chunk_number):
 
 
 def main(dummy):
-    
-    FLAGS.num_signal = 2 * FLAGS.num_signal
-
+    device = "cuda:"+ str(FLAGS.gpu) if torch.cuda.is_available() else "cpu"
+    print("Using device : ", device)    
     emb_model = None if FLAGS.emb_model_path is None else torch.jit.load(
-        FLAGS.emb_model_path).to(FLAGS.device)
+        FLAGS.emb_model_path).to(device).eval()
 
     env = lmdb.open(
         FLAGS.output_path,
@@ -161,33 +174,44 @@ def main(dummy):
         readahead=False,
     )
 
-    if FLAGS.parser is None:
-        audio_files = search_for_audios([FLAGS.input_path])
-        audio_files = map(str, audio_files)
-        audio_files = map(os.path.abspath, audio_files)
-        audio_files = [*audio_files]
-
-        audio_files = [
-            f for f in audio_files
-            if not any([excl in f for excl in FLAGS.exclude])
-        ]
-        metadatas = [{"path": audio} for audio in audio_files]
-        midi_files = [None] * len(audio_files)
-        print(len(audio_files), " files found")
-
-    else:
-        audio_files, midi_files, metadatas = get_parser(FLAGS.parser)(
-            FLAGS.input_path)
+    audio_files, midi_files, metadatas = get_parser(FLAGS.parser)(
+            FLAGS.input_path, FLAGS.midi_path, FLAGS.ext, FLAGS.exclude)
 
     chunks_buffer, metadatas_buffer = [], []
     midis = []
     cur_index = 0
 
     # Load BasicPitchPytorch
-
     if FLAGS.basic_pitch_midi:
-        BP = BasicPitchPytorch(sr=FLAGS.sample_rate, device=FLAGS.device)
-
+        BP = BasicPitchPytorch(sr=FLAGS.sample_rate, device=device)
+        
+    if FLAGS.beat_track:
+        beat_tracker = BeatTrack(sr=FLAGS.sample_rate, device=device)
+        
+    # Data augmentations
+    if FLAGS.waveform_augmentation == "none":
+        print("Using no augmentation")
+        waveform_augmentation, waveform_pool = None, None
+        
+    else:
+        if FLAGS.waveform_augmentation == "shift_stretch":
+            waveform_augmentation = PSTS(ts_min = 0.51, ts_max = 1.99, pitch_min = -6, pitch_max = 6, sr = FLAGS.sample_rate, chunk_size = FLAGS.num_signal//4)
+        elif FLAGS.waveform_augmentation == "stretch":
+            waveform_augmentation = PSTS(ts_min = 0.51, ts_max = 1.99, pitch_min = 0, pitch_max = 0, sr = FLAGS.sample_rate, chunk_size = FLAGS.num_signal//4)
+        elif FLAGS.waveform_augmentation == "shift":
+            waveform_augmentation = PSTS(ts_min = 1, ts_max = 1, pitch_min = -6, pitch_max = 6, sr = FLAGS.sample_rate, chunk_size = FLAGS.num_signal//4)
+        else:
+            raise ValueError("Unknown waveform augmentation")
+        waveform_pool = Pool(FLAGS.num_multiprocesses)
+        
+    # Audio descriptors 
+    
+    if len(FLAGS.descriptors)>0:
+        waveform_descriptors = AudioDescriptors(sr=FLAGS.sample_rate, descriptors=FLAGS.descriptors, hop_length = 512, n_fft = 2048)
+        if waveform_pool is None:
+            waveform_pool = Pool(FLAGS.num_multiprocesses)
+            
+            
     # Processing loop
     for i, (file, midi_file, metadata) in enumerate(
             zip(tqdm(audio_files), midi_files, metadatas)):
@@ -210,14 +234,13 @@ def main(dummy):
         # In case no midi_file is used, we can tile the audio file. Otherwise, we need to keep the alignement between midi data and audio.
         if midi_file is None:
             # Pad to a power of 2 if audio is longer than num_signal, tile if audio is too short
-            if audio.shape[-1] > FLAGS.num_signal:
+            if audio.shape[-1] > FLAGS.num_signal and audio.shape[-1]%FLAGS.num_signal > FLAGS.num_signal//2:
                 audio = np.pad(
                     audio,
                     (0, FLAGS.num_signal - audio.shape[-1] % FLAGS.num_signal))
-            else:
+            elif audio.shape[-1] < FLAGS.num_signal:
                 while audio.shape[-1] < FLAGS.num_signal:
                     audio = np.concatenate([audio, audio])
-            
         
         audio = audio[:audio.shape[-1] // FLAGS.num_signal *FLAGS.num_signal]
 
@@ -238,8 +261,9 @@ def main(dummy):
         chunk_index = 0
 
         for j, chunk in enumerate(chunks):
+            # Chunk the midi
             if midi_data is not None:
-                silence_test, midi = get_midi(copy.deepcopy(midi_data), j)
+                silence_test, midi = get_midi(copy.deepcopy(midi_data), chunk_number = chunk_index)
             else:
                 midi = None
                 silence_test = np.max(
@@ -251,8 +275,7 @@ def main(dummy):
                 continue
 
             midis.append(midi)
-            chunks_buffer.append(
-                torch.from_numpy(chunk.reshape(1, FLAGS.num_signal)))
+            chunks_buffer.append(chunk)
             metadatas_buffer.append(metadata)
 
 
@@ -260,15 +283,42 @@ def main(dummy):
                     j == len(chunks) - 1 and i == len(audio_files) - 1):
 
                 if emb_model is not None:
-                    chunks_buffer_torch = (
-                        torch.stack(chunks_buffer).squeeze().to(FLAGS.device))
+                    chunks_buffer_torch = torch.from_numpy(np.stack(chunks_buffer)).to(device)
+                    
                     z = emb_model.encode(
                         chunks_buffer_torch.reshape(-1, 1, FLAGS.num_signal))
+                    
+                    # Data augmentations for the timbre
+                    if waveform_augmentation is not None:
+                        augments = {}
+                        for i in range(FLAGS.num_augments):
+                            augmented_buffers = waveform_pool.map(waveform_augmentation, chunks_buffer)
+                            augmented_buffers_torch = [torch.from_numpy(a).reshape(1,1,-1).to(device) for a in augmented_buffers]
+                            z_augmented = [emb_model.encode(a).squeeze().cpu().numpy() for a in augmented_buffers_torch]
+                            augments["augment_"+FLAGS.waveform_augmentation+"_" + str(i)] = z_augmented
+                    else:
+                        augments = None
+                        
+                    # Audio descriptors 
+                    features = {}
+                    if len(FLAGS.descriptors)>0:
+                        descriptors_buffers = waveform_pool.map(partial(waveform_descriptors, z_length = z.shape[-1]), chunks_buffer)
+                        for k in descriptors_buffers[0]:
+                            features[k] = [d[k] for d in descriptors_buffers]
+                        
+                    # Beat tracking
+                    if FLAGS.beat_track:
+                        beat_data = [beat_tracker(chunk, z_length = z.shape[-1]) for chunk in chunks_buffer]
+                        features["beat_clock"] = [b["beat_clock"] for b in beat_data]
+                        features["downbeat_clock"] = [b["downbeat_clock"] for b in beat_data]
+                        
                 else:
                     z = [None] * len(chunks_buffer)
+                    augments = None
+                    features = None
 
-                for array, curz, midi, cur_metadata in zip(
-                        chunks_buffer, z, midis, metadatas_buffer):
+                for k, (array, curz, midi, cur_metadata) in enumerate(zip(
+                        chunks_buffer, z, midis, metadatas_buffer)):
 
                     ae = AudioExample()
 
@@ -291,6 +341,14 @@ def main(dummy):
                         ae.put_buffer(key="midi",
                                       b=pickle.dumps(midi),
                                       shape=None)
+                        
+                    if augments is not None:
+                        for key, augmented_buffers in augments.items():
+                            ae.put_array(key, augmented_buffers[k], dtype=np.float32)
+                            
+                    if features is not None:
+                        for key, descr in features.items():
+                            ae.put_array(key, descr[k], dtype=np.float32)
 
                     key = f"{cur_index:08d}"
 

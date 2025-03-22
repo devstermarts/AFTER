@@ -6,6 +6,7 @@ import pathlib
 import os
 
 
+
 class BaseTransform():
 
     def __init__(self, sr, name) -> None:
@@ -105,13 +106,6 @@ class BaseTransform():
 
 import pedalboard
 
-
-def inverse_permutation(perm):
-    inv = torch.empty_like(perm)
-    inv[perm] = torch.arange(perm.size(0), device=perm.device)
-    return inv
-
-
 class PSTS(BaseTransform):
 
     def __init__(self,
@@ -173,3 +167,138 @@ class PSTS(BaseTransform):
     def __call__(self, audio):
         return self.process_audio(audio)
 
+
+
+import librosa
+class AudioDescriptors(BaseTransform):
+
+    def __init__(self,
+                 sr,
+                 hop_length=512,
+                 n_fft=2048,
+                 descriptors= ["centroid", "bandwidth", "rolloff","flatness"]):
+        super().__init__(sr, "spectral_features")
+        self.descriptors = descriptors
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+            
+    def compute_librosa(self,
+                        y: np.ndarray,
+                        z_length: int) -> dict:
+        """
+        Compute all descriptors inside the Librosa library
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Input audio signal (samples)
+        sr : int
+            Input sample rate
+        mean : bool, optional
+            [TODO] : Compute the mean of descriptors
+
+        Returns
+        -------
+        dict
+            Dictionnary containing all features.
+
+        """
+        # Features to compute
+        features_dict = {
+            "rolloff": librosa.feature.spectral_rolloff,
+            "bandwidth": librosa.feature.spectral_bandwidth,
+            "centroid": librosa.feature.spectral_centroid,
+            "flatness": librosa.feature.spectral_flatness,
+            
+        }
+        # Results dict
+        features = {}
+        # Spectral features
+        S, phase = librosa.magphase(librosa.stft(y=y, n_fft=self.n_fft, hop_length=self.hop_length, center = False))
+        # Compute all descriptors
+        
+        audio_length = y.shape[-1]
+        S_times = librosa.frames_to_time(np.arange(S.shape[-1]), sr=self.sr, hop_length=self.hop_length, n_fft=self.n_fft)
+        #S_times = np.linspace(self.n_fft/2 / 44100, audio_length / self.sr - self.n_fft/2 / 44100, S.shape[-1])
+        Z_times = np.linspace(0, audio_length / self.sr, z_length)
+
+        for descr in self.descriptors:
+            func = features_dict[descr]
+            feature_cur = func(S=S).squeeze()
+            feature_cur = np.interp(Z_times, S_times, feature_cur)
+            features[descr] = feature_cur
+        return features
+    
+    def __call__(self, audio, z_length):
+        return self.compute_librosa(audio, z_length)
+    
+
+
+
+## Beat tracking by beat-this
+
+from after.dataset.beat_this.inference import Audio2Beats
+
+class BeatTrack(BaseTransform):
+
+    def __init__(self, sr, device="cpu") -> None:
+        super().__init__(sr, "beat_this")
+
+        self.audio2beats = Audio2Beats(checkpoint_path="final0",
+                                       dbn=False,
+                                       float16=False,
+                                       device=device)
+        
+    def get_beat_signal(self, b, len_wave, len_z, sr=24000, zero_value=0):
+        if len(b) < 2:
+            #print("empty beat")
+            return zero_value * np.ones(len_z)
+        times = np.linspace(0, len_wave / sr, len_z)
+        t_max = times[-1]
+        i = 0
+        while i < len(b) - 1 and b[i] < t_max:
+            i += 1
+        b = b[:i]
+        minvalue = 0
+        id_time_min = 0
+        out = []
+
+        if len(b) < 3:
+            #print("empty beat")
+            return np.zeros(len(times))
+        for i in range(len(b)):
+            time = b[i]
+            time_prev = b[i - 1] if i > 0 else 0
+            delt = time - times
+
+            try:
+                id_time_max = np.argmin(delt[delt > 0])
+                time_interp = times[id_time_max]
+                maxvalue = (time_interp - time_prev) / (time - time_prev)
+            except:
+                id_time_max = 1
+                maxvalue = 1
+
+            out.append(
+                np.linspace(minvalue, maxvalue, 1 + id_time_max - id_time_min))
+
+            if i < len(b) - 1:
+                minvalue = (times[id_time_max + 1] - time) / (b[i + 1] - time)
+                id_time_min = id_time_max + 1
+
+        maxvalue = (times[len_z - 1] - time) / (time - time_prev)
+        minvalue = (times[id_time_max] - time) / (time - time_prev)
+        id_time_min = id_time_max + 1
+        out.append(np.zeros(1 + len_z - id_time_min))
+
+        out = np.concatenate(out)
+        out = out[:len(times)]
+        if len(out) < len(times):
+            out = np.concatenate((out, np.zeros(abs(len(times) - len(out)))))
+        return out
+
+    def __call__(self, waveform: np.array, z_length: int): 
+        beats, downbeats = self.audio2beats(waveform, self.sr)
+        beat_clock = self.get_beat_signal(beats, waveform.shape[-1], z_length, sr= self.sr, zero_value = 0.)
+        downbeat_clock = self.get_beat_signal(downbeats, waveform.shape[-1], z_length, sr= self.sr, zero_value = 0.)
+        return {"beat_clock": beat_clock, "downbeat_clock": downbeat_clock} 
