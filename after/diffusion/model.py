@@ -333,15 +333,19 @@ class Base(nn.Module):
 
                 cond = cond + zsem_noise_aug * torch.randn_like(cond)
 
-                if self.step < timbre_warmup:
-                    with torch.no_grad():
+                if self.encoder_time is not None:
+                    if self.step < timbre_warmup:
+                        with torch.no_grad():
+                            time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
+                                x1_time_cond, return_full=True
+                            )
+                    else:
                         time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
                             x1_time_cond, return_full=True
-                        ) if self.encoder_time is not None else None
+                        )
                 else:
-                    time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
-                        x1_time_cond, return_full=True
-                    ) if self.encoder_time is not None else None
+                    time_cond = x1_time_cond
+                    time_cond_reg = torch.tensor(0.)
 
                 time_cond, _ = self.vector_quantizer(
                     time_cond) if self.vector_quantizer is not None else (
