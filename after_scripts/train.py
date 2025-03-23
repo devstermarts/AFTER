@@ -41,7 +41,7 @@ flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 flags.DEFINE_multi_string("augmentation_keys", [],
                           "List of augmentation keys.")
 
-flags.DEFINE_bool("use_validation", False, "Use a train/validation split")
+flags.DEFINE_bool("use_validation", True, "Use a train/validation split")
 
 
 def add_gin_extension(config_name: str) -> str:

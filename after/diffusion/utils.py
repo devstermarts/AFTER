@@ -37,6 +37,12 @@ def collate_fn(batch,
         for i in range(batch_size):
             current_x = all_timbre[indexes[i]][i]
 
+            if current_x.shape[-1] < n_signal - 1:
+                current_x = x[i]
+                print(
+                    "Warning: timbre signal too short, using original signal")
+            print(current_x.shape[-1])
+            print(n_signal)
             i1 = np.random.randint(0, current_x.shape[-1] - n_signal, 1)[0]
             current_x = current_x[..., i1:i1 + n_signal]
             x_timbre.append(current_x)
@@ -76,5 +82,3 @@ def collate_fn(batch,
         "x_cond": x_timbre,
         "x_time_cond": time_cond_target,
     }
-
-
