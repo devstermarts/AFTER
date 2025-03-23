@@ -38,8 +38,10 @@ flags.DEFINE_string("emb_model_path", None, "Path to the embedding model.")
 flags.DEFINE_bool("use_cache", False, "Whether to cache the dataset.")
 flags.DEFINE_integer("max_samples", None, "Maximum number of samples.")
 flags.DEFINE_integer("num_workers", 0, "Number of workers.")
-flags.DEFINE_multi_string("augmentation_keys", ["all"],
+flags.DEFINE_multi_string("augmentation_keys", [],
                           "List of augmentation keys.")
+
+flags.DEFINE_bool("use_validation", False, "Use a train/validation split")
 
 
 def add_gin_extension(config_name: str) -> str:
@@ -109,9 +111,9 @@ def main(argv):
 
     ## DATASET
     augmentation_keys = FLAGS.augmentation_keys
-    
-    if augmentation_keys==["all"]:
-        dataset = SimpleDataset(path = FLAGS.db_path[0])
+
+    if augmentation_keys == ["all"]:
+        dataset = SimpleDataset(path=FLAGS.db_path[0])
         allkeys = dataset.get_keys()
         augmentation_keys = [k for k in allkeys if "augment" in k]
 
@@ -141,15 +143,16 @@ def main(argv):
 
         train_sampler = dataset.get_sampler()
 
-        valset = CombinedDataset(
-            path_dict=path_dict,
-            config="validation",
-            freqs="estimate" if FLAGS.freqs is None else FLAGS.freqs,
-            keys=data_keys,
-            init_cache=FLAGS.use_cache,
-            num_samples=FLAGS.max_samples,
-        )
-        val_sampler = valset.get_sampler()
+        if FLAGS.use_validation:
+            valset = CombinedDataset(
+                path_dict=path_dict,
+                config="validation",
+                freqs="estimate" if FLAGS.freqs is None else FLAGS.freqs,
+                keys=data_keys,
+                init_cache=FLAGS.use_cache,
+                num_samples=FLAGS.max_samples,
+            )
+            val_sampler = valset.get_sampler()
 
     else:
         dataset = SimpleDataset(path=FLAGS.db_path[0],
@@ -157,12 +160,12 @@ def main(argv):
                                 max_samples=FLAGS.max_samples,
                                 init_cache=FLAGS.use_cache,
                                 split="train")
-
-        valset = SimpleDataset(path=FLAGS.db_path[0],
-                               keys=data_keys,
-                               max_samples=FLAGS.max_samples,
-                               split="validation",
-                               init_cache=FLAGS.use_cache)
+        if FLAGS.use_validation:
+            valset = SimpleDataset(path=FLAGS.db_path[0],
+                                   keys=data_keys,
+                                   max_samples=FLAGS.max_samples,
+                                   split="validation",
+                                   init_cache=FLAGS.use_cache)
         train_sampler, val_sampler = None, None
 
     train_loader = torch.utils.data.DataLoader(
@@ -174,14 +177,17 @@ def main(argv):
         collate_fn=collate_fn,
         sampler=train_sampler if train_sampler is not None else None)
 
-    valid_loader = torch.utils.data.DataLoader(
-        valset,
-        batch_size=FLAGS.bsize,
-        shuffle=False,
-        num_workers=FLAGS.num_workers,
-        drop_last=False,
-        collate_fn=collate_fn,
-        sampler=val_sampler if val_sampler is not None else None)
+    if FLAGS.use_validation:
+        valid_loader = torch.utils.data.DataLoader(
+            valset,
+            batch_size=FLAGS.bsize,
+            shuffle=False,
+            num_workers=FLAGS.num_workers,
+            drop_last=False,
+            collate_fn=collate_fn,
+            sampler=val_sampler if val_sampler is not None else None)
+    else:
+        valid_loader = None
 
     print("Data shape : ", dataset[0]["z"].shape)
     print("Croped shape : ", next(iter(train_loader))["x"].shape)

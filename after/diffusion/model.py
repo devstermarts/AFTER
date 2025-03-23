@@ -110,12 +110,8 @@ class Base(nn.Module):
         params = list(self.net.parameters())
 
         if self.encoder is not None:
-            print("trtaining encoder")
+            print("training encoder")
             params += list(self.encoder.parameters())
-
-        if self.post_encoder is not None:
-            print("trtaining encoder")
-            params += list(self.post_encoder.parameters())
 
         if self.encoder_time is not None:
             print("training encoder_time")
@@ -337,12 +333,10 @@ class Base(nn.Module):
                     if self.step < timbre_warmup:
                         with torch.no_grad():
                             time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
-                                x1_time_cond, return_full=True
-                            )
+                                x1_time_cond, return_full=True)
                     else:
                         time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
-                            x1_time_cond, return_full=True
-                        )
+                            x1_time_cond, return_full=True)
                 else:
                     time_cond = x1_time_cond
                     time_cond_reg = torch.tensor(0.)
@@ -482,7 +476,7 @@ class Base(nn.Module):
                         losses_sum[k] = 0.
                         losses_sum_count[k] = 0
 
-                if self.step % steps_valid == 20:
+                if self.step % steps_valid == 20 and validloader is not None:
                     with torch.no_grad() and self.ema.average_parameters():
 
                         ## VALIDATION
@@ -544,8 +538,6 @@ class Base(nn.Module):
                         x0 = self.sample_prior(x1.shape)
 
                         audio_true = self.emb_model.decode(x1.cpu()).cpu()
-                        
-                        
 
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore")
@@ -565,8 +557,9 @@ class Base(nn.Module):
                                     x1_rec.cpu()).cpu()
 
                                 for i in range(x1.shape[0]):
-                                    logger.add_audio("generated/" + str(nb_steps) +
-                                                     "steps/" + str(i),
+                                    logger.add_audio("generated/" +
+                                                     str(nb_steps) + "steps/" +
+                                                     str(i),
                                                      audio_rec[i],
                                                      global_step=self.step,
                                                      sample_rate=self.sr)
@@ -650,15 +643,16 @@ class RectifiedFlow(Base):
             time_cond_cycle_loss = torch.nn.functional.mse_loss(
                 time_cond_rec, time_cond_target, reduction="none")
 
-        elif cycle_loss_type == "mse_margin":
+        elif "mse_margin" in cycle_loss_type:
+            margin = float(cycle_loss_type.split("_")[-1])
             cond_cycle_loss = torch.maximum(
-                torch.tensor(0.05),
+                torch.tensor(margin),
                 torch.nn.functional.mse_loss(cond_rec,
                                              cond_target.detach(),
                                              reduction='none'))
 
             time_cond_cycle_loss = torch.maximum(
-                torch.tensor(0.05),
+                torch.tensor(margin),
                 torch.nn.functional.mse_loss(time_cond_rec,
                                              time_cond_target,
                                              reduction="none"))

@@ -32,7 +32,7 @@ class SimpleDataset(torch.utils.data.Dataset):
                              readonly=readonly,
                              readahead=True,
                              map_async=False,
-                             map_size=200 *
+                             map_size=50 *
                              1024**3 if readonly == False else None)
 
         with self.env.begin() as txn:
@@ -205,6 +205,10 @@ class CombinedDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return int(self.len)
+
+    def get_keys(self):
+        for dname, d in self.datasets.items():
+            print(dname, d.get_keys())
 
     def get_sampler(self):
         if self.config in ["train", "all"]:

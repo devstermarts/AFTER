@@ -114,7 +114,7 @@ flags.DEFINE_integer('num_augments',
                      help="Number of augmentations to perform")
 
 flags.DEFINE_integer('num_multiprocesses',
-                     default=16,
+                     default=8,
                      help="Number of processes for the data augmentation")
 flags.DEFINE_multi_string('descriptors',
                           default=[],
@@ -198,7 +198,7 @@ def main(dummy):
                                          pitch_min=0,
                                          pitch_max=0,
                                          sr=FLAGS.sample_rate,
-                                         chunk_size=FLAGS.num_signal // 4)
+                                         chunk_size=None)
         elif FLAGS.waveform_augmentation == "shift":
             waveform_augmentation = PSTS(ts_min=1,
                                          ts_max=1,

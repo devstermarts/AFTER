@@ -102,10 +102,10 @@ diffusion.model.Base.fit:
     stop_training_encoder_time_step = 1000000
     update_classifier_every = 3
     adversarial_loss = "cosine"
-    adversarial_weight = 0.075
+    adversarial_weight = 0.05
 
     # Noise augmentation to smooth the latent space
-    zsem_noise_aug = 0.1
+    zsem_noise_aug = 0.05
 
     ## Encoder regularisation
     regularisation_weight = 1
@@ -114,12 +114,12 @@ diffusion.model.Base.fit:
     
     ## Cycle loss
     cycle_consistency = True
-    cycle_loss_type = 'mse_margin'
+    cycle_loss_type = 'mse_margin_0.05'
     cycle_mode = 'interpolant'
     cycle_scaling = 'none'
     cycle_start_step = %PHASE_1_STEP
     cycle_swap_target = 'cond'
-    cycle_weights = [0.75, 0.]
+    cycle_weights = [0.5, 0.]
 
     ### DATA ###
     shuffle_zsem = None
