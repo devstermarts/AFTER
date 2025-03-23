@@ -4,8 +4,12 @@ import yaml
 from typing import Callable, Iterable, Sequence, Tuple
 import pathlib
 
-def slakh(audio_path, midi_path, extensions):
-    tracks = [os.path.join(audio_path, subfolder) for subfolder in os.listdir(audio_path)]
+
+def slakh(audio_path, midi_path, extensions, exclude):
+    tracks = [
+        os.path.join(audio_path, subfolder)
+        for subfolder in os.listdir(audio_path)
+    ]
     meta = tracks[0] + "/metadata.yaml"
     ban_list = [
         "Chromatic Percussion",
@@ -54,7 +58,6 @@ def slakh(audio_path, midi_path, extensions):
     return audios, midis, metadatas
 
 
-
 def flatten(iterator: Iterable):
     for elm in iterator:
         for sub_elm in elm:
@@ -77,63 +80,74 @@ def search_for_audios(
     return audios
 
 
-
 def simple_audio(audio_folder, midi_folder, extensions, exclude):
-    audio_files = search_for_audios([audio_folder], extensions = extensions)
+    audio_files = search_for_audios([audio_folder], extensions=extensions)
     audio_files = map(str, audio_files)
     audio_files = map(os.path.abspath, audio_files)
     audio_files = [*audio_files]
 
     audio_files = [
-        f for f in audio_files
-        if not any([excl in f for excl in exclude])
+        f for f in audio_files if not any([excl in f for excl in exclude])
     ]
     metadatas = [{"path": audio} for audio in audio_files]
     midi_files = [None] * len(audio_files)
     print(len(audio_files), " files found")
     return audio_files, midi_files, metadatas
-    
+
 
 def simple_midi(audio_folder, midi_folder, extensions, exclude):
-    audio_files, _, _ = simple_audio(audio_folder, midi_folder, extensions, exclude)
-    
-    midi_func = lambda x: x.replace(audio_folder, midi_folder).replace("wav", "mid")
+    if midi_folder is None:
+        midi_folder = audio_folder
+    audio_files, _, _ = simple_audio(audio_folder, midi_folder, extensions,
+                                     exclude)
+
+    midi_func = lambda x: x[:-4] + ".midi"
     midi_files = map(midi_func, audio_files)
     midi_files = [*midi_files]
-    
-    metadatas = [{"path": audio, "midi_path": midi} for audio, midi in zip(audio_files, midi_files)]
-    
+
+    metadatas = [{
+        "path": audio,
+        "midi_path": midi
+    } for audio, midi in zip(audio_files, midi_files)]
+
     return audio_files, midi_files, metadatas
 
 
 import numpy as np
+
+
 def vital_parser(audio_folder, midi_folder, extensions, exclude):
-    audio_files, _, _ = simple_audio(audio_folder, midi_folder, extensions, exclude)
-    midis, metadatas= [],[]
+    audio_files, _, _ = simple_audio(audio_folder, midi_folder, extensions,
+                                     exclude)
+    midis, metadatas = [], []
     midi_list = None
-    
+
     for audio in tqdm(audio_files):
         datafile = audio.replace(".wav", ".npy")
         allmetadata = np.load(datafile, allow_pickle=True).item()
-        del(allmetadata["parameters"])
-        
-        all_metadata = {k:v for k, v in allmetadata.items() if k in ["description", "tags", "categories", "name", "bank"]}
+        del (allmetadata["parameters"])
+
+        all_metadata = {
+            k: v
+            for k, v in allmetadata.items()
+            if k in ["description", "tags", "categories", "name", "bank"]
+        }
         midi_index = int(datafile.split("_")[-1].split(".")[0])
-        
+
         if midi_list is None:
-            folder = "/".join(datafile.split('/')[:5]) 
+            folder = "/".join(datafile.split('/')[:5])
             midi_seqs_file = os.path.join(folder, "midi_seqs.txt")
 
             with open(midi_seqs_file, "r") as file:
                 midi_list = [line.strip() for line in file.readlines()]
 
         midi_path = midi_list[midi_index]
-        
+
         midis.append(midi_path)
         metadata = {"path": audio, "midi_path": midi_path}
         metadata.update(all_metadata)
         metadatas.append(metadata)
-        
+
     print(metadatas[0])
     return audio_files, midis, metadatas
 
@@ -149,5 +163,3 @@ def get_parser(parser_name):
         return vital_parser
     else:
         raise ValueError(f"Parser {parser_name} not available")
-
-
