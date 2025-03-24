@@ -102,30 +102,10 @@ class MHAttention(nn.Module):
         self.register_buffer('v_cache', None)
         self.register_buffer('last_k', None)
         self.register_buffer('last_v', None)
-        
-        k_cache = [
-            torch.zeros((
-                4,
-                n_heads,
-                min_chunk_size,
-                embed_dim // n_heads,
-            )) for i in range(max_num_cache)
-        ]
-
-        v_cache = [
-            torch.zeros((
-                4,
-                n_heads,
-                min_chunk_size,
-                embed_dim // n_heads,
-            )) for i in range(max_num_cache)
-        ]
-
 
         self.cache = nn.ModuleList(
             [CacheModule(max_cache_size) for _ in range(max_num_cache)])
 
-        
         self.rotary_emb = rotary_emb
         self.max_cache_size = max_cache_size
         self.min_chunk_size = min_chunk_size
@@ -143,7 +123,13 @@ class MHAttention(nn.Module):
 
     def set_buffers(self, k, v, i: int):
         cachemodule: CacheModule = self.cache[i]
+
+        print("Current cache for step", i, " : ",
+              cachemodule.get_cache()[0].shape)
+
         cachemodule.set_cache(k, v)
+
+        print("setting cache for step", i, " : ", k.shape)
 
     def roll_cache(self, roll_size: int, cache_index: int):
 
@@ -201,7 +187,8 @@ class MHAttention(nn.Module):
             attn_mask = None
 
         if self.rotary_emb is not None:
-            q, full_k = self.rotary_emb.rotate_queries_with_cached_keys(q, full_k)
+            q, full_k = self.rotary_emb.rotate_queries_with_cached_keys(
+                q, full_k)
 
         out = nn.functional.scaled_dot_product_attention(
             q,

@@ -69,15 +69,6 @@ def main(argv):
     zs_channels = gin.query_parameter("%ZS_CHANNELS")
     ae_latents = gin.query_parameter("%IN_SIZE")
 
-    structure_type = gin.query_parameter("%STRUCTURE_TYPE")
-
-    ## Trace the unet
-    #x = torch.ones(1, ae_latents, n_signal)
-    #time_cond = torch.randn(1, zs_channels, n_signal)
-    #cond = torch.randn(1, zt_channels)
-    #t = torch.ones(1, n_signal)
-    #net = torch.jit.trace(blender.net, (x, t, cond, time_cond))
-
     class Streamer(nn_tilde.Module):
 
         def __init__(self) -> None:
@@ -111,7 +102,7 @@ def main(argv):
             self.zt_buffer = self.n_signal_timbre * self.ae_ratio
 
             ## ATTRIBUTES ##
-            self.register_attribute("nb_steps", 1)
+            self.register_attribute("nb_steps", 6)
             self.register_attribute("guidance", 1.)
             self.register_attribute("guidance_timbre", 1.)
             self.register_attribute("guidance_structure", 1.)
@@ -262,9 +253,10 @@ def main(argv):
             self.nb_steps = (nb_steps, )
             return 0
 
-        def model_forward(self, x: torch.Tensor, time: torch.Tensor,
-                          cond: torch.Tensor, time_cond: torch.Tensor,
-                          cache_index: int) -> torch.Tensor:
+        @torch.jit.ignore
+        def model_forward_dummy(self, x: torch.Tensor, time: torch.Tensor,
+                                cond: torch.Tensor, time_cond: torch.Tensor,
+                                cache_index: int) -> torch.Tensor:
 
             guidance_timbre = self.guidance_timbre[0]
             guidance_structure = self.guidance_structure[0]
@@ -312,13 +304,43 @@ def main(argv):
 
             return dx
 
+        def model_forward(self, x: torch.Tensor, time: torch.Tensor,
+                          cond: torch.Tensor, time_cond: torch.Tensor,
+                          cache_index: int) -> torch.Tensor:
+
+            guidance_timbre = self.guidance_timbre[0]
+            guidance_structure = self.guidance_structure[0]
+            print(guidance_timbre, guidance_structure)
+
+            full_time = time.repeat(2, 1, 1)
+            full_x = x.repeat(2, 1, 1)
+
+            full_cond = torch.cat(
+                [cond, self.drop_value * torch.ones_like(cond)])
+
+            full_time_cond = torch.cat([
+                time_cond,
+                time_cond,
+            ])
+
+            dx = self.net(full_x,
+                          time=full_time,
+                          cond=full_cond,
+                          time_cond=full_time_cond,
+                          cache_index=cache_index)
+
+            dx_full, dx_none = torch.chunk(dx, 2, dim=0)
+            dx = dx_none + (dx_full - dx_none) * guidance_timbre
+
+            return dx
+
         def sample(self, x_last: torch.Tensor, cond: torch.Tensor,
                    time_cond: torch.Tensor):
 
             x = x_last
             t = torch.linspace(0, 1, self.nb_steps[0] + 1)
             dt = 1 / self.nb_steps[0]
-
+            print("x is shape", x.shape)
             for i, t_value in enumerate(t[:-1]):
 
                 dt = dt
@@ -363,10 +385,12 @@ def main(argv):
                 x = x.repeat(n, 1, 1)
             return x
 
+        @torch.jit.export
         def decode(self, x: torch.Tensor) -> torch.Tensor:
             audio = self.emb_model_out.decode(x)
             return audio
 
+        @torch.jit.export
         def generate(self, x: torch.Tensor) -> torch.Tensor:
             z = self.diffuse(x)
             audio = self.decode(z)
@@ -382,7 +406,11 @@ def main(argv):
             return audio
 
     ####
+
     streamer = Streamer()
+
+    dummmy = torch.randn(1, zs_channels + zt_channels, 128)
+    out = streamer.diffuse(dummmy)
     os.makedirs("./exports/", exist_ok=True)
     streamer.export_to_ts("./exports/" + out_name + ".ts")
 

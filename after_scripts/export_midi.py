@@ -321,7 +321,7 @@ def main(argv):
             zsem = self.encoder.forward_stream(
                 self.previous_timbre[:x.shape[0]])
             self.last_zsem = zsem
-            return zsem.unsqueeze(-1).repeat((1, 1, self.chunk_size))
+            return zsem.unsqueeze(-1).repeat((1, 1, x.shape[-1]))
 
         @torch.jit.export
         def diffuse(self, x: torch.Tensor) -> torch.Tensor:
@@ -354,17 +354,19 @@ def main(argv):
                 x = x.repeat(n, 1, 1)
             return x
 
+        @torch.jit.export
         def decode(self, x: torch.Tensor) -> torch.Tensor:
             audio = self.emb_model_out.decode(x)
             return audio
 
+        @torch.jit.export
         def generate(self, x: torch.Tensor) -> torch.Tensor:
             z = self.diffuse(x)
             audio = self.decode(z)
             return audio
 
+        @torch.jit.export
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-
             structure = x[:, :-1]
             x_timbre = x[:, -1:]
             timbre = self.timbre(x_timbre)
@@ -380,6 +382,9 @@ def main(argv):
 
     ####
     streamer = Streamer()
+    dummmy = torch.randn(1, FLAGS.n_poly * 2 + zt_channels, 128)
+    out = streamer.diffuse(dummmy)
+
     os.makedirs("./exports/", exist_ok=True)
     streamer.export_to_ts("./exports/" + out_name + ".ts")
 

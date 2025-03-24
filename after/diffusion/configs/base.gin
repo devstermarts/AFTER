@@ -10,7 +10,7 @@ from cached_conv import convs
 IN_SIZE = None
 N_SIGNAL = None
 
-ZS_CHANNELS = 12
+ZS_CHANNELS = 6
 ZT_CHANNELS = 6
 SR = 44100
 STRUCTURE_TYPE = "audio"
@@ -102,10 +102,11 @@ diffusion.model.Base.fit:
     stop_training_encoder_time_step = 1000000
     update_classifier_every = 3
     adversarial_loss = "cosine"
-    adversarial_weight = 0.05
+    adversarial_weight = 0.025
 
     # Noise augmentation to smooth the latent space
     zsem_noise_aug = 0.05
+    time_cond_noise_aug = 0.02
 
     ## Encoder regularisation
     regularisation_weight = 1

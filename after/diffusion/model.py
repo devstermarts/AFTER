@@ -232,7 +232,8 @@ class Base(nn.Module):
             use_ema=True,
             update_classifier_every=2,
             load_encoders=[True, True, True],
-            zsem_noise_aug=0.):
+            zsem_noise_aug=0.,
+            time_cond_noise_aug=0.):
 
         self.train_encoder = train_encoder
         self.train_encoder_time = train_encoder_time
@@ -322,7 +323,6 @@ class Base(nn.Module):
                     with torch.no_grad():
                         cond, cond_mean, cond_reg = self.encoder(
                             x1_cond, return_full=True)
-                        cond = cond + zsem_noise_aug * torch.randn_like(cond)
                 else:
                     cond, cond_mean, cond_reg = self.encoder(x1_cond,
                                                              return_full=True)
@@ -340,6 +340,9 @@ class Base(nn.Module):
                 else:
                     time_cond = x1_time_cond
                     time_cond_reg = torch.tensor(0.)
+
+                time_cond = time_cond + time_cond_noise_aug * torch.randn_like(
+                    time_cond)
 
                 time_cond, _ = self.vector_quantizer(
                     time_cond) if self.vector_quantizer is not None else (
@@ -576,6 +579,9 @@ class RectifiedFlow(Base):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+    def smooth_function_cond(self, x, slope=7):
+        return 0.5 * (1 + torch.tanh(slope * (0.3 - x)))
+
     def cycle_step(self,
                    interpolant,
                    t,
@@ -674,13 +680,6 @@ class RectifiedFlow(Base):
                                                cond=self.drop_value *
                                                torch.ones_like(cond),
                                                time=t)
-
-                #model_output_notimecond = self.net(interpolant,
-                #                                   time_cond=self.drop_value *
-                #                                   torch.ones_like(time_cond),
-                #                                   cond=cond,
-                #                                   time=t)
-
                 model_output = self.net(interpolant,
                                         time_cond=time_cond,
                                         cond=cond,
@@ -689,19 +688,14 @@ class RectifiedFlow(Base):
                 model_output.detach(),
                 model_output_nocond.detach(),
                 reduction="none").mean((1, 2))
-
-            #scaling_time_cond = torch.nn.functional.mse_loss(
-            #    model_output.detach(),
-            #    model_output_notimecond.detach(),
-            #    reduction="none").mean((1, 2))
-
             scaling_cond[t.squeeze() > 0.6] = torch.zeros_like(
                 scaling_cond[t.squeeze() > 0.6])
 
             cond_cycle_loss = scaling_cond[:, None] * cond_cycle_loss
 
-            #time_cond_cycle_loss = scaling_time_cond[:, None,
-            #                                         None] * time_cond_cycle_loss
+        elif cycle_scaling == "ramps":
+            scaling_cond = self.smooth_function_cond(t.view(-1))
+            cond_cycle_loss = scaling_cond[:, None] * cond_cycle_loss
         elif cycle_scaling == "none":
             pass
         else:

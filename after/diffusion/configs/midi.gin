@@ -41,7 +41,7 @@ diffusion.networks.transformer.Denoiser:
     embed_dim = 512
     cond_dim = %ZT_CHANNELS
     noise_embed_dims = 64
-    n_layers = 6
+    n_layers = 8
     mlp_multiplier = 3
     dropout  = 0.1
     causal = True
