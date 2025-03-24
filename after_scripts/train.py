@@ -38,7 +38,7 @@ flags.DEFINE_string("emb_model_path", None, "Path to the embedding model.")
 flags.DEFINE_bool("use_cache", False, "Whether to cache the dataset.")
 flags.DEFINE_integer("max_samples", None, "Maximum number of samples.")
 flags.DEFINE_integer("num_workers", 0, "Number of workers.")
-flags.DEFINE_multi_string("augmentation_keys", [],
+flags.DEFINE_multi_string("augmentation_keys", ["all"],
                           "List of augmentation keys.")
 
 flags.DEFINE_bool("use_validation", True, "Use a train/validation split")
@@ -68,17 +68,11 @@ def main(argv):
 
     ######### BUILD MODEL #########
 
-    if FLAGS.emb_model_path == "music2latent":
-        from music2latent import EncoderDecoder
-        emb_model = EncoderDecoder(device=device)
-        ae_ratio = 4096
-        ae_emb_size = 64
-    else:
-        emb_model = torch.jit.load(FLAGS.emb_model_path)  #.to(device)
-        dummy = torch.randn(1, 1, 4096)  #.to(device)
-        z = emb_model.encode(dummy)
-        ae_emb_size = z.shape[1]
-        ae_ratio = 4096 // z.shape[-1]
+    emb_model = torch.jit.load(FLAGS.emb_model_path)  #.to(device)
+    dummy = torch.randn(1, 1, 4096)  #.to(device)
+    z = emb_model.encode(dummy)
+    ae_emb_size = z.shape[1]
+    ae_ratio = 4096 // z.shape[-1]
 
     print("using a codec with - compression ratio : ", ae_ratio,
           " - emb size : ", ae_emb_size)

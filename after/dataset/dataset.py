@@ -73,7 +73,7 @@ class SimpleDataset(torch.utils.data.Dataset):
 
     def get_keys(self):
         with self.env.begin() as txn:
-            ae = AudioExample(txn.get(self.keys[0]))
+            ae = AudioExample(txn.get(self.keys[1]))
             return ae.get_keys()
 
     def build_cache(self):

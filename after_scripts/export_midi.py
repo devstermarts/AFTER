@@ -30,6 +30,7 @@ flags.DEFINE_string("emb_model_path_decode",
                     help="Path to decoder model")
 flags.DEFINE_integer("chunk_size", default=4, help="Chunk size")
 flags.DEFINE_integer("max_cache_size", default=128, help="Max cache size")
+flags.DEFINE_integer("n_poly", default=4, help="Number of polyphonic voices")
 
 
 def main(argv):
@@ -66,10 +67,7 @@ def main(argv):
     n_signal = gin.query_parameter('%N_SIGNAL')
     n_signal_timbre = gin.query_parameter('%N_SIGNAL')
     zt_channels = gin.query_parameter("%ZT_CHANNELS")
-    zs_channels = gin.query_parameter("%ZS_CHANNELS")
     ae_latents = gin.query_parameter("%IN_SIZE")
-
-    structure_type = gin.query_parameter("%STRUCTURE_TYPE")
 
     ## Trace the unet
     #x = torch.ones(1, ae_latents, n_signal)
@@ -90,7 +88,7 @@ def main(argv):
             self.n_signal = n_signal
             self.n_signal_timbre = n_signal_timbre
             self.chunk_size = FLAGS.chunk_size
-            self.zs_channels = zs_channels
+            self.n_poly = FLAGS.n_poly
             self.zt_channels = zt_channels
             self.ae_latents = ae_latents
             self.emb_model_out = torch.jit.load(
@@ -125,33 +123,20 @@ def main(argv):
             self.register_buffer("last_zsem", torch.zeros(4, self.zt_channels))
 
             ## METHODS ##
+
+            input_labels = [
+                f"(signal) Input {l} {i}" for i in range(self.n_poly)
+                for l in ["pitch", "velocity"]
+            ]
+            print(input_labels)
             self.register_method(
                 "forward",
-                in_channels=2,
+                in_channels=self.n_poly * 2 + 1,
                 in_ratio=1,
                 out_channels=1,
                 out_ratio=1,
-                input_labels=[
-                    f"(signal) Input structure",
-                    f"(signal) Input timbre",
-                ],
+                input_labels=input_labels + [f"(signal) Input timbre"],
                 output_labels=[f"(signal) Audio output"],
-                test_buffer_size=self.chunk_size * self.ae_ratio,
-            )
-
-            self.register_method(
-                "structure",
-                in_channels=1,
-                in_ratio=1,
-                out_channels=self.zs_channels,
-                out_ratio=self.ae_ratio,
-                input_labels=[
-                    f"(signal) Input structure",
-                ],
-                output_labels=[
-                    f"(signal) Output structure {i}"
-                    for i in range(zs_channels)
-                ],
                 test_buffer_size=self.chunk_size * self.ae_ratio,
             )
 
@@ -172,30 +157,24 @@ def main(argv):
 
             self.register_method(
                 "generate",
-                in_channels=zt_channels + zs_channels,
+                in_channels=self.n_poly * 2 + zt_channels,
                 in_ratio=self.ae_ratio,
                 out_channels=1,
                 out_ratio=1,
-                input_labels=[
-                    f"(signal) Input structure {i}" for i in range(zs_channels)
-                ] + [f"(signal) Input timbre {i}" for i in range(zt_channels)],
+                input_labels=input_labels +
+                [f"(signal) Input timbre {i}" for i in range(zt_channels)],
                 output_labels=[f"(signal) Audio output"],
                 test_buffer_size=self.chunk_size * self.ae_ratio,
             )
 
             self.register_method(
                 "diffuse",
-                in_channels=zt_channels + zs_channels,
+                in_channels=self.n_poly * 2 + zt_channels,
                 in_ratio=self.ae_ratio,
                 out_channels=self.ae_latents,
                 out_ratio=self.ae_ratio,
-                input_labels=[
-                    f"(signal) Input structure {i}"
-                    for i in range(self.zs_channels)
-                ] + [
-                    f"(signal_{i}) Input timbre"
-                    for i in range(self.zt_channels)
-                ],
+                input_labels=input_labels +
+                [f"(signal) Input timbre {i}" for i in range(zt_channels)],
                 output_labels=[
                     f"(signal) Latent output {i}"
                     for i in range(self.ae_latents)
@@ -345,17 +324,29 @@ def main(argv):
             return zsem.unsqueeze(-1).repeat((1, 1, self.chunk_size))
 
         @torch.jit.export
-        def structure(self, x) -> torch.Tensor:
-            x = self.emb_model_structure.encode(x)
-            x = self.encoder_time.forward_stream(x)
-            return x
-
-        @torch.jit.export
         def diffuse(self, x: torch.Tensor) -> torch.Tensor:
 
             n = x.shape[0]
             zsem = x[:, -self.zt_channels:].mean(-1)
-            time_cond = x[:, :self.zs_channels]
+
+            # Get the notes
+            notes = x[:, :2 * self.n_poly]
+            if notes.shape[-1] != x.shape[-1]:
+                notes = torch.nn.functional.interpolate(notes,
+                                                        size=x.shape[-1],
+                                                        mode="nearest")
+
+            time_cond = torch.zeros((1, 128, x.shape[-1]))
+
+            print(notes.shape)
+
+            for i in range(self.n_poly):
+                for j in range(x.shape[-1]):
+                    if notes[0, 2 * i + 1, j] > 0:
+                        time_cond[:, notes[:, 2 * i].long(),
+                                  j] = notes[:, 2 * i + 1, j] / 128
+
+            # Generate
             x = torch.randn(n, self.ae_latents, x.shape[-1])
             x = self.sample(x[:1], time_cond=time_cond[:1], cond=zsem[:1])
 
@@ -373,9 +364,15 @@ def main(argv):
             return audio
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-            x_structure, x_timbre = x[:, :1], x[:, 1:]
-            structure, timbre = self.structure(x_structure), self.timbre(
-                x_timbre)
+
+            structure = x[:, :-1]
+            x_timbre = x[:, -1:]
+            timbre = self.timbre(x_timbre)
+
+            structure = torch.nn.functional.interpolate(structure,
+                                                        size=timbre.shape[-1],
+                                                        mode="nearest")
+
             x = torch.cat((structure, timbre), 1)
             z = self.diffuse(x)
             audio = self.decode(z)

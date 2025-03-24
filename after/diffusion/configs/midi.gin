@@ -14,7 +14,7 @@ ZS_CHANNELS = 128
 ZT_CHANNELS = 6
 SR = 44100
 STRUCTURE_TYPE = "midi"
-PHASE_1_STEP = 50000
+PHASE_1_STEP = 1
 
 # Data
 diffusion.utils.collate_fn:
@@ -71,7 +71,7 @@ diffusion.model.Base.fit:
 
     ## Adversarial
     timbre_warmup = %PHASE_1_STEP
-    stop_training_encoder_step = 1000000
+    stop_training_encoder_step = 100000000
     adversarial_weight = 0.
 
     # Noise augmentation to smooth the latent space
