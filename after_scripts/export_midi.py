@@ -249,16 +249,16 @@ def main(argv):
             guidance_structure = self.guidance_structure[0]
             print(guidance_timbre, guidance_structure)
 
-            full_time = time.repeat(4, 1, 1)
-            full_x = x.repeat(4, 1, 1)
+            full_time = time.repeat(3, 1, 1)
+            full_x = x.repeat(3, 1, 1)
 
             full_cond = torch.cat([
-                cond, self.drop_value * torch.ones_like(cond), cond,
-                self.drop_value * torch.ones_like(cond)
+                cond,
+                cond,
+                self.drop_value * torch.ones_like(cond),
             ])
 
             full_time_cond = torch.cat([
-                time_cond,
                 time_cond,
                 self.drop_value * torch.ones_like(time_cond),
                 self.drop_value * torch.ones_like(time_cond),
@@ -270,24 +270,15 @@ def main(argv):
                           time_cond=full_time_cond,
                           cache_index=cache_index)
 
-            dx_full, dx_time_cond, dx_cond, dx_none = torch.chunk(dx, 4, dim=0)
+            dx_full, dx_cond, dx_none = torch.chunk(dx, 3, dim=0)
 
             total_guidance = 0.5 * (guidance_structure + guidance_timbre)
 
-            guidance_cond_factor = guidance_timbre / (guidance_structure +
-                                                      guidance_timbre)
+            guidance_cond_factor = guidance_structure / (max(
+                guidance_timbre, 0.1))
 
-            guidance_joint_factor = 1 - 2 * (abs(guidance_cond_factor - 0.5))
-
-            print(total_guidance, guidance_cond_factor, guidance_joint_factor)
-
-            dx = dx_none + total_guidance * (guidance_joint_factor *
-                                             (dx_full - dx_none) +
-                                             (1 - guidance_joint_factor) *
-                                             (guidance_cond_factor *
-                                              (dx_cond - dx_none) +
-                                              (1 - guidance_cond_factor) *
-                                              (dx_time_cond - dx_none)))
+            dx = dx_none + total_guidance * (dx_cond + guidance_cond_factor *
+                                             (dx_full - dx_cond) - dx_none)
 
             return dx
 
@@ -331,11 +322,6 @@ def main(argv):
 
             # Get the notes
             notes = x[:, :2 * self.n_poly]
-            if notes.shape[-1] != x.shape[-1]:
-                notes = torch.nn.functional.interpolate(notes,
-                                                        size=x.shape[-1],
-                                                        mode="nearest")
-
             time_cond = torch.zeros((1, 128, x.shape[-1]))
 
             print(notes.shape)

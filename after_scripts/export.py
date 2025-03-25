@@ -253,27 +253,26 @@ def main(argv):
             self.nb_steps = (nb_steps, )
             return 0
 
-        @torch.jit.ignore
-        def model_forward_dummy(self, x: torch.Tensor, time: torch.Tensor,
-                                cond: torch.Tensor, time_cond: torch.Tensor,
-                                cache_index: int) -> torch.Tensor:
+        def model_forward(self, x: torch.Tensor, time: torch.Tensor,
+                          cond: torch.Tensor, time_cond: torch.Tensor,
+                          cache_index: int) -> torch.Tensor:
 
             guidance_timbre = self.guidance_timbre[0]
             guidance_structure = self.guidance_structure[0]
             print(guidance_timbre, guidance_structure)
 
-            full_time = time.repeat(4, 1, 1)
-            full_x = x.repeat(4, 1, 1)
+            full_time = time.repeat(3, 1, 1)
+            full_x = x.repeat(3, 1, 1)
 
             full_cond = torch.cat([
-                cond, self.drop_value * torch.ones_like(cond), cond,
-                self.drop_value * torch.ones_like(cond)
+                cond,
+                self.drop_value * torch.ones_like(cond),
+                self.drop_value * torch.ones_like(cond),
             ])
 
             full_time_cond = torch.cat([
                 time_cond,
                 time_cond,
-                self.drop_value * torch.ones_like(time_cond),
                 self.drop_value * torch.ones_like(time_cond),
             ])
 
@@ -283,30 +282,24 @@ def main(argv):
                           time_cond=full_time_cond,
                           cache_index=cache_index)
 
-            dx_full, dx_time_cond, dx_cond, dx_none = torch.chunk(dx, 4, dim=0)
+            dx_full, dx_time_cond, dx_none = torch.chunk(dx, 3, dim=0)
 
             total_guidance = 0.5 * (guidance_structure + guidance_timbre)
 
-            guidance_cond_factor = guidance_timbre / (guidance_structure +
-                                                      guidance_timbre)
+            guidance_cond_factor = guidance_timbre / (max(
+                guidance_structure, 0.1))
 
-            guidance_joint_factor = 1 - 2 * (abs(guidance_cond_factor - 0.5))
-
-            print(total_guidance, guidance_cond_factor, guidance_joint_factor)
-
-            dx = dx_none + total_guidance * (guidance_joint_factor *
-                                             (dx_full - dx_none) +
-                                             (1 - guidance_joint_factor) *
-                                             (guidance_cond_factor *
-                                              (dx_cond - dx_none) +
-                                              (1 - guidance_cond_factor) *
-                                              (dx_time_cond - dx_none)))
+            dx = dx_none + total_guidance * (
+                dx_time_cond + guidance_cond_factor *
+                (dx_full - dx_time_cond) - dx_none)
 
             return dx
 
-        def model_forward(self, x: torch.Tensor, time: torch.Tensor,
-                          cond: torch.Tensor, time_cond: torch.Tensor,
-                          cache_index: int) -> torch.Tensor:
+        @torch.jit.ignore
+        def model_forward_quadruple(self, x: torch.Tensor, time: torch.Tensor,
+                                    cond: torch.Tensor,
+                                    time_cond: torch.Tensor,
+                                    cache_index: int) -> torch.Tensor:
 
             guidance_timbre = self.guidance_timbre[0]
             guidance_structure = self.guidance_structure[0]

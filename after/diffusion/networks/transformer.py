@@ -93,18 +93,28 @@ class MHAttention(nn.Module):
                  rotary_emb: nn.Module = None,
                  embed_dim: int = 256,
                  min_chunk_size: int = 1,
-                 max_num_cache=32):
+                 max_num_cache=16,
+                 max_batch_size=4):
         super().__init__()
         self.is_causal = is_causal
         self.dropout_level = dropout_level
         self.n_heads = n_heads
-        self.register_buffer('k_cache', None)
-        self.register_buffer('v_cache', None)
+
+        #k_cache = torch.zeros((max_bsize, num_heads, max_cache_size))
+
         self.register_buffer('last_k', None)
         self.register_buffer('last_v', None)
 
-        self.cache = nn.ModuleList(
-            [CacheModule(max_cache_size) for _ in range(max_num_cache)])
+        k_cache = torch.zeros((max_batch_size, max_num_cache, n_heads,
+                               max_cache_size, embed_dim // n_heads))
+
+        v_cache = torch.zeros((max_batch_size, max_num_cache, n_heads,
+                               max_cache_size, embed_dim // n_heads))
+        self.register_buffer('k_cache', k_cache)
+        self.register_buffer('v_cache', v_cache)
+
+        #self.cache = nn.ModuleList(
+        #    [CacheModule(max_cache_size) for _ in range(max_num_cache)])
 
         self.rotary_emb = rotary_emb
         self.max_cache_size = max_cache_size
@@ -117,44 +127,55 @@ class MHAttention(nn.Module):
                                           h=self.n_heads)
 
     def get_buffers(self, i: int):
-        cachemodule: CacheModule = self.cache[i]
-        k_cache, v_cache = cachemodule.get_cache()
+        #cachemodule: CacheModule = self.cache[i]
+        #k_cache, v_cache = cachemodule.get_cache()
+
+        k_cache, v_cache = self.k_cache[:, i], self.v_cache[:, i]
         return k_cache, v_cache
 
     def set_buffers(self, k, v, i: int):
-        cachemodule: CacheModule = self.cache[i]
 
-        print("Current cache for step", i, " : ",
-              cachemodule.get_cache()[0].shape)
+        #cachemodule: CacheModule = self.cache[i]
 
-        cachemodule.set_cache(k, v)
+        #print("Current cache for step", i, " : ",
+        #      cachemodule.get_cache()[0].shape)
 
-        print("setting cache for step", i, " : ", k.shape)
+        # cachemodule.get_cache()
+        #cachemodule.set_cache(k, v)
+
+        self.k_cache[:k.shape[0], i] = k
+        self.v_cache[:k.shape[0], i] = v
+        #print("setting cache for step", i, " : ", k.shape)
 
     def roll_cache(self, roll_size: int, cache_index: int):
 
         k_cache, v_cache = self.get_buffers(cache_index)
+        # if len(k_cache) > 1:
+        #     print("Rolling cache, old cache :", k_cache[0, 0, -8:, 0])
 
         if roll_size < self.min_chunk_size:
             print("warming - roll size is smaller than min chunk size")
-        if self.last_k is None:
-            print("Run at least one buffer before rolling cache" if self.
-                  max_cache_size > 0 else "Cache is not enable to roll")
-            return
-        if len(k_cache.shape) > 1:
-            k_cache = torch.cat([k_cache, self.last_k[:, :, :roll_size]],
-                                dim=2)
-            v_cache = torch.cat([v_cache, self.last_v[:, :, :roll_size]],
-                                dim=2)
-        else:
-            k_cache = self.last_k[:, :, :roll_size]
-            v_cache = self.last_v[:, :, :roll_size]
-            print("cache created")
+
+        k_cache = torch.cat(
+            [k_cache[:self.last_k.shape[0]], self.last_k[:, :, :roll_size]],
+            dim=2)
+        v_cache = torch.cat(
+            [v_cache[:self.last_k.shape[0]], self.last_v[:, :, :roll_size]],
+            dim=2)
 
         if k_cache.shape[2] > self.max_cache_size:
             k_cache = k_cache[:, :, -self.max_cache_size:]
             v_cache = v_cache[:, :, -self.max_cache_size:]
+
         self.set_buffers(k_cache, v_cache, cache_index)
+
+        # print("Rolling cache, new cache :", k_cache[0, 0, -8:, 0])
+
+        # k_cache, v_cache = self.get_buffers(cache_index)
+        # if len(k_cache) > 1:
+        #     print("new cache, new cache :", k_cache[0, 0, -8:, 0])
+
+        #print(k_cache.shape)
 
     def forward(self, q, k, v, cache_index: int):
         q, k, v = [self.rearrange_heads1(x) for x in [q, k, v]]
@@ -162,8 +183,8 @@ class MHAttention(nn.Module):
         if self.max_cache_size > 0:
             k_cache, v_cache = self.get_buffers(cache_index)
             if len(k_cache.shape) > 1:
-                full_k = torch.cat([k_cache, k], dim=2)
-                full_v = torch.cat([v_cache, v], dim=2)
+                full_k = torch.cat([k_cache[:k.shape[0]], k], dim=2)
+                full_v = torch.cat([v_cache[:k.shape[0]], v], dim=2)
                 full_k = full_k[:, :, -self.max_cache_size:]
                 full_v = full_v[:, :, -self.max_cache_size:]
             else:
