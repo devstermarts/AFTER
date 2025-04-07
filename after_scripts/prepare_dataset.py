@@ -48,8 +48,8 @@ flags.DEFINE_multi_string('exclude', [],
                           help='kewords to exclude from the search',
                           required=False)
 
-flags.DEFINE_multi_string('include', [],
-                          help='kewords to exclude from the search',
+flags.DEFINE_multi_string('include', None,
+                          help='kewords to include in the file search',
                           required=False)
 
 flags.DEFINE_bool('normalize',
@@ -118,7 +118,7 @@ flags.DEFINE_integer('num_augments',
                      help="Number of augmentations to perform")
 
 flags.DEFINE_integer('num_multiprocesses',
-                     default=8,
+                     default=4,
                      help="Number of processes for the data augmentation")
 flags.DEFINE_multi_string('descriptors',
                           default=[],

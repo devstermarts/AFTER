@@ -17,28 +17,24 @@ parser = argparse.ArgumentParser()
 
 FLAGS = flags.FLAGS
 # Flags definition
-flags.DEFINE_string("name",
+flags.DEFINE_string("model_path",
                     default="./after_runs/test",
                     help="Name of the experiment folder")
 flags.DEFINE_integer("step", default=0, help="Step number of checkpoint")
-flags.DEFINE_string("out_name", default=None, help="Output name")
-flags.DEFINE_string("emb_model_path_encode",
+flags.DEFINE_string("emb_model_path",
                     default="./pretrained/test.ts",
                     help="Path to encoder model")
-flags.DEFINE_string("emb_model_path_decode",
-                    default="./pretrained/test.ts",
-                    help="Path to decoder model")
 flags.DEFINE_integer("chunk_size", default=4, help="Chunk size")
-flags.DEFINE_integer("max_cache_size", default=128, help="Max cache size")
+flags.DEFINE_integer("max_cache_size", default=128, help="Training length (in number of latent samples)")
 
 
 def main(argv):
     # Parse model folder
-    folder = FLAGS.name
+    folder = FLAGS.model_path
     checkpoint_path = folder + "/checkpoint" + str(FLAGS.step) + "_EMA.pt"
     config = folder + "/config.gin"
 
-    out_name = FLAGS.out_name if FLAGS.out_name is not None else FLAGS.name
+    out_name = os.path.join(folder, "after.audio." + folder.split("/")[-1] + ".ts")
 
     # Parse config
     gin.parse_config_file(config)
@@ -84,18 +80,16 @@ def main(argv):
             self.zs_channels = zs_channels
             self.zt_channels = zt_channels
             self.ae_latents = ae_latents
-            self.emb_model_out = torch.jit.load(
-                FLAGS.emb_model_path_decode).eval()
             self.emb_model_structure = torch.jit.load(
-                FLAGS.emb_model_path_encode).eval()
+                FLAGS.emb_model_path).eval()
             self.emb_model_timbre = torch.jit.load(
-                FLAGS.emb_model_path_encode).eval()
+                FLAGS.emb_model_path).eval()
 
             self.drop_value = blender.drop_value
 
             # Get the ae ratio
             dummy = torch.zeros(1, 1, 4 * 4096)
-            z = self.emb_model_out.encode(dummy)
+            z = self.emb_model_structure.encode(dummy)
             self.ae_ratio = 4 * 4096 // z.shape[-1]
 
             self.sr = gin.query_parameter("%SR")
@@ -257,7 +251,6 @@ def main(argv):
 
             guidance_timbre = self.guidance_timbre[0]
             guidance_structure = self.guidance_structure[0]
-            print(guidance_timbre, guidance_structure)
 
             full_time = time.repeat(3, 1, 1)
             full_x = x.repeat(3, 1, 1)
@@ -301,7 +294,6 @@ def main(argv):
 
             guidance_timbre = self.guidance_timbre[0]
             guidance_structure = self.guidance_structure[0]
-            print(guidance_timbre, guidance_structure)
 
             full_time = time.repeat(2, 1, 1)
             full_x = x.repeat(2, 1, 1)
@@ -331,7 +323,6 @@ def main(argv):
             x = x_last
             t = torch.linspace(0, 1, self.nb_steps[0] + 1)
             dt = 1 / self.nb_steps[0]
-            print("x is shape", x.shape)
             for i, t_value in enumerate(t[:-1]):
 
                 dt = dt
@@ -377,7 +368,7 @@ def main(argv):
 
         @torch.jit.export
         def decode(self, x: torch.Tensor) -> torch.Tensor:
-            audio = self.emb_model_out.decode(x)
+            audio = self.emb_model_structure.decode(x)
             return audio
 
         @torch.jit.export
@@ -401,8 +392,7 @@ def main(argv):
 
     dummmy = torch.randn(1, zs_channels + zt_channels, 128)
     out = streamer.diffuse(dummmy)
-    os.makedirs("./exports/", exist_ok=True)
-    streamer.export_to_ts("./exports/" + out_name + ".ts")
+    streamer.export_to_ts(out_name)
 
     print("Bravo - Export successful")
 

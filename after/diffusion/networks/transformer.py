@@ -100,18 +100,17 @@ class MHAttention(nn.Module):
         self.dropout_level = dropout_level
         self.n_heads = n_heads
 
-        #k_cache = torch.zeros((max_bsize, num_heads, max_cache_size))
+        if max_cache_size > 0:
+            self.register_buffer('last_k', None)
+            self.register_buffer('last_v', None)
 
-        self.register_buffer('last_k', None)
-        self.register_buffer('last_v', None)
+            k_cache = torch.zeros((max_batch_size, max_num_cache, n_heads,
+                                max_cache_size, embed_dim // n_heads))
 
-        k_cache = torch.zeros((max_batch_size, max_num_cache, n_heads,
-                               max_cache_size, embed_dim // n_heads))
-
-        v_cache = torch.zeros((max_batch_size, max_num_cache, n_heads,
-                               max_cache_size, embed_dim // n_heads))
-        self.register_buffer('k_cache', k_cache)
-        self.register_buffer('v_cache', v_cache)
+            v_cache = torch.zeros((max_batch_size, max_num_cache, n_heads,
+                                max_cache_size, embed_dim // n_heads))
+            self.register_buffer('k_cache', k_cache)
+            self.register_buffer('v_cache', v_cache)
 
         #self.cache = nn.ModuleList(
         #    [CacheModule(max_cache_size) for _ in range(max_num_cache)])
@@ -127,31 +126,15 @@ class MHAttention(nn.Module):
                                           h=self.n_heads)
 
     def get_buffers(self, i: int):
-        #cachemodule: CacheModule = self.cache[i]
-        #k_cache, v_cache = cachemodule.get_cache()
-
         k_cache, v_cache = self.k_cache[:, i], self.v_cache[:, i]
         return k_cache, v_cache
 
     def set_buffers(self, k, v, i: int):
-
-        #cachemodule: CacheModule = self.cache[i]
-
-        #print("Current cache for step", i, " : ",
-        #      cachemodule.get_cache()[0].shape)
-
-        # cachemodule.get_cache()
-        #cachemodule.set_cache(k, v)
-
         self.k_cache[:k.shape[0], i] = k
         self.v_cache[:k.shape[0], i] = v
-        #print("setting cache for step", i, " : ", k.shape)
 
     def roll_cache(self, roll_size: int, cache_index: int):
-
         k_cache, v_cache = self.get_buffers(cache_index)
-        # if len(k_cache) > 1:
-        #     print("Rolling cache, old cache :", k_cache[0, 0, -8:, 0])
 
         if roll_size < self.min_chunk_size:
             print("warming - roll size is smaller than min chunk size")
@@ -168,14 +151,6 @@ class MHAttention(nn.Module):
             v_cache = v_cache[:, :, -self.max_cache_size:]
 
         self.set_buffers(k_cache, v_cache, cache_index)
-
-        # print("Rolling cache, new cache :", k_cache[0, 0, -8:, 0])
-
-        # k_cache, v_cache = self.get_buffers(cache_index)
-        # if len(k_cache) > 1:
-        #     print("new cache, new cache :", k_cache[0, 0, -8:, 0])
-
-        #print(k_cache.shape)
 
     def forward(self, q, k, v, cache_index: int):
         q, k, v = [self.rearrange_heads1(x) for x in [q, k, v]]

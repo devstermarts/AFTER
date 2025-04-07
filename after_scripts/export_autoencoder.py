@@ -9,7 +9,7 @@ import os
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("step", 3000000, "Step to load the model from")
+flags.DEFINE_integer("step", 1000000, "Step to load the model from")
 flags.DEFINE_string("model_path", None, "Path of the trained model")
 
 class AE(nn_tilde.Module):
@@ -34,7 +34,7 @@ class AE(nn_tilde.Module):
         self.model = model
 
         test_array = torch.zeros((3, 1, 4096))
-        z = self.model.encode(test_array)
+        z, _ = self.model.encode(test_array)
 
         self.comp_ratio = test_array.shape[-1] // z.shape[-1]
 
@@ -84,7 +84,7 @@ class AE(nn_tilde.Module):
 
         z = self.model.encoder(x)
 
-        z = self.model.bottleneck(z)
+        z, _ = self.model.bottleneck(z)
 
         x = self.model.decoder(z)
 
@@ -98,7 +98,7 @@ class AE(nn_tilde.Module):
         if self.model.use_pqmf:
             x = self.model.pqmf(x)
         z = self.model.encoder(x)
-        z = self.model.bottleneck(z)
+        z, _ = self.model.bottleneck(z)
 
         return z
 
@@ -109,20 +109,18 @@ class AE(nn_tilde.Module):
             x = self.model.pqmf.inverse(x)
         return x
 
-
 def main(argv):
     cc.use_cached_conv(False)
     ae = AE(model_name=FLAGS.model_path, step=FLAGS.step)
     test_array = torch.zeros((3, 1, ae.comp_ratio * 8))
     z = ae.encode(test_array)
     x = ae.decode(z)
-    print(z.shape, x.shape)
-    print(ae.forward(test_array).shape)
 
     ae.export_to_ts( os.path.join(FLAGS.model_path, "export.ts"))
     
     cc.use_cached_conv(True)
     ae = AE(model_name=FLAGS.model_path, step=FLAGS.step)
+    
     test_array = torch.zeros((3, 1, ae.comp_ratio * 8))
     z = ae.encode(test_array)
     x = ae.decode(z)

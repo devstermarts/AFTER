@@ -32,7 +32,7 @@ setuptools.setup(
     entry_points={"console_scripts": [
         "after = after_scripts.main_cli:main",
     ]},
-   # install_requires=requirements.split("\n"),
+    install_requires=requirements.split("\n"),
     python_requires='>=3.9',
     include_package_data=True,
 )
