@@ -6,9 +6,9 @@ from after import diffusion
 diffusion.model.Base.fit: 
     ## Cycle loss
     cycle_consistency = True
-    cycle_loss_type = 'mse'
+    cycle_loss_type = 'mse_margin_0.05'
     cycle_mode = 'interpolant'
-    cycle_scaling = 'natural'
-    cycle_start_step = %PHASE_1_STEP
+    cycle_scaling = 'none'
+    cycle_start_step = 600000
     cycle_swap_target = 'cond'
-    cycle_weights = [5.0, 0.]
+    cycle_weights = [0.05, 0.]

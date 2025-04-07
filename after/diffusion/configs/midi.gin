@@ -66,7 +66,7 @@ diffusion.model.Base:
 
  
 diffusion.model.Base.fit: 
-    max_steps = 1000000
+    max_steps = 800000
     train_encoder = True
 
     ## Adversarial

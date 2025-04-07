@@ -9,11 +9,11 @@ from cached_conv import convs
 IN_SIZE = None
 N_SIGNAL = None
 
-ZS_CHANNELS = 16
-ZT_CHANNELS = 8
+ZS_CHANNELS = 12
+ZT_CHANNELS = 6
 SR = 44100
 STRUCTURE_TYPE = "audio"
-PHASE_1_STEP = 300000
+PHASE_1_STEP = 200000
 
 # Data
 diffusion.utils.collate_fn:
@@ -88,7 +88,7 @@ diffusion.model.Base:
 
  
 diffusion.model.Base.fit: 
-    max_steps = 3000000
+    max_steps = 400000
     train_encoder = True
     train_encoder_time = True
 
@@ -99,7 +99,7 @@ diffusion.model.Base.fit:
     stop_training_encoder_time_step = 1000000
     update_classifier_every = 3
     adversarial_loss = "cosine"
-    adversarial_weight = 0.1
+    adversarial_weight = 0.05
 
     # Noise augmentation to smooth the latent space
     zsem_noise_aug = 0.1

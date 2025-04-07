@@ -10,7 +10,7 @@ from cached_conv import convs
 IN_SIZE = None
 N_SIGNAL = None
 
-ZS_CHANNELS = 6
+ZS_CHANNELS = 12
 ZT_CHANNELS = 6
 SR = 44100
 STRUCTURE_TYPE = "audio"
@@ -90,7 +90,7 @@ diffusion.model.Base:
 
  
 diffusion.model.Base.fit: 
-    max_steps = 1000000
+    max_steps = 800000
     train_encoder = True
     train_encoder_time = True
 
@@ -98,10 +98,10 @@ diffusion.model.Base.fit:
     timbre_warmup = %PHASE_1_STEP
     adversarial_warmup = 50000
     stop_training_encoder_step = %PHASE_1_STEP
-    stop_training_encoder_time_step = 1000000
+    stop_training_encoder_time_step = 800000
     update_classifier_every = 3
     adversarial_loss = "cosine"
-    adversarial_weight = 0.025
+    adversarial_weight = 0.05
 
     # Noise augmentation to smooth the latent space
     zsem_noise_aug = 0.05
@@ -111,22 +111,15 @@ diffusion.model.Base.fit:
     regularisation_weight = 1
     regularisation_warmup = 1
 
-    
     ## Cycle loss
-    cycle_consistency = True
-    cycle_loss_type = 'mse_margin_0.05'
-    cycle_mode = 'interpolant'
-    cycle_scaling = 'none'
-    cycle_start_step = %PHASE_1_STEP
-    cycle_swap_target = 'cond'
-    cycle_weights = [0.5, 0.]
+    cycle_consistency = False
 
     ### DATA ###
     shuffle_zsem = None
 
     ## Log ## 
     steps_valid = 10000
-    steps_save = 50000
+    steps_save = 100000
     
     use_ema = True
     lr = 1e-4
