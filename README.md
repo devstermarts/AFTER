@@ -54,7 +54,6 @@ after prepare_dataset --input_path /audio/folder --output_path /dataset/path --e
 ```
 
 - `num_signal` flag sets the duration of the audio chunks for training in number of samples (must be a power of 2). (default: 524288 ~ 11 seconds)
-**EXPLAIN THOSE FACTORS OF 2**
 - `sample_rate` flag sets the resampling rate.  (default: 44100)
 - `gpu` device to use for computing the embeddings. Use -1 for cpu (default: 0)
 
@@ -87,7 +86,7 @@ Different configurations are available in `diffusion/configs` and can be combine
     </tr>
     <tr>
       <td><strong>midi</strong></td>
-      <td>Uses MIDI as input for the structure encoder. Requires modification of <code>prepare_dataset.py</code> to include matching audio files.</td>
+      <td>Uses MIDI as input for the structure encoder</td>
     </tr>
     <tr>
       <td rowspan="2"><strong>Additional</strong></td>
@@ -104,7 +103,7 @@ Different configurations are available in `diffusion/configs` and can be combine
 
 
 
-The tensorboard logs and checkpoints are saved to  `/diffusion/runs/model_name`, and you can experiment with you trained model using the notebooks `/notebooks/audio_to_audio_demo.ipynb` and `/notebooks/midi_to_audio_demo.ipynb`.
+The tensorboard logs and checkpoints are saved to  `/diffusion/runs/model_name`, and you can experiment with you trained model using the notebooks `notebooks/audio_to_audio_demo.ipynb` and `notebooks/midi_to_audio_demo.ipynb`.
 
 ### Export
 
@@ -112,20 +111,20 @@ Once the training is complete, you can export the model to an [_nn_tilde_](https
 
 For an audio-to-audio model :
 ```bash
-after export  --model_path diff_model_name --emb_model_path pretrained/AE_model_name_stream.ts 
+after export --model_path diff_model_name --emb_model_path pretrained/AE_model_name_stream.ts --step 800000
 ```
 
 For a MIDI-to-audio model :
 
 ```bash
-after export_midi  --model_path diff_model_name --emb_model_path pretrained/AE_model_name_stream.ts --npoly 4
+after export_midi --model_path diff_model_name --emb_model_path pretrained/AE_model_name_stream.ts --npoly 4 --step 800000
 ```
 
 where `npoly` sets the number for voices for polyphony. Make sure to use the streaming version of the exported autoencoder (denoted by _stream.ts).
 
 ## Inference in MaxMSP
 
-You can experiment with inference in MaxMSP using the patches in `./patchs` and the pretrained models available [here]()
+You can experiment with inference in MaxMSP using the patches in `./patchs` and the pretrained models available [here](https://nubo.ircam.fr/index.php/s/8NFD5gWwbkT4G5P).
 
 
 <!-- ### MIDI-to-Audio 
