@@ -5,8 +5,12 @@ from __gin__ import dynamic_registration
 import after
 from after import autoencoder
 from after.autoencoder.networks import SimpleNetsStream
-from after.autoencoder.networks import descript_discriminator
+from after.autoencoder.networks import encodec_discriminator
 import torch
+import cached_conv 
+
+
+
 
 # Model 
 SR = 44100
@@ -18,27 +22,33 @@ PQMF_BANDS = 16 #Set to 1 if no pqmf
 BASE_CHANNELS = 64
 KERNEL_SIZE = 5
 DECODER_RATIO = 1.5 # Sets the size of decoder compared to encoder
-USE_NOISE_GENERATOR = True
+USE_NOISE_GENERATOR = False
 
 
 ## TRAINING
 FREEZE_ENCODER_STEPS = 500000
-WARMUP_STEPS = 200000
+WARMUP_STEPS = 500000
 MAX_STEPS = 1000000
+REGULARISATION_WEIGHT  = 0.1
+REGULARISATION_WARMUP = 100000
 
+cached_conv.get_padding:
+    mode = "causal"
 
-
+SimpleNetsStream.TanhBottleneck:
+    sigma = 0.01
+    scale = 3
+    
 SimpleNetsStream.AutoEncoder:
     in_channels = %PQMF_BANDS
     channels = %BASE_CHANNELS
     pqmf_bands =  %PQMF_BANDS
     z_channels = %LATENT_SIZE
     multipliers = [1, 2, 4, 4, 8, 8] # Multipliers of number of channels for each block
-    factors = [2, 2, 2, 4, 2]  # Factors of upsampling for each block
+    factors = [2, 2, 2, 4, 4]  # Factors of upsampling for each block
     dilations = [1, 3, 9]
     kernel_size = %KERNEL_SIZE
-    bottleneck  =  @torch.nn.Identity()  #@SimpleNetsStream.TanhBottleneck()
-    recurrent_layer = @torch.nn.Identity
+    bottleneck  =  @SimpleNetsStream.TanhBottleneck() #@SimpleNetsStream.TanhBottleneck()
     use_norm = False   #Wheter to use group normalization : DISABLE FOR STREAMING MODELS
     decoder_ratio = %DECODER_RATIO
     use_loudness = True
@@ -46,20 +56,20 @@ SimpleNetsStream.AutoEncoder:
 
 
 
-descript_discriminator.DescriptDiscriminator:
-    rates=[]
-    periods=[2, 3, 5, 7, 11]
-    fft_sizes=[2048, 1024, 512]
-    sample_rate=%SR
-    n_channels=1
-    num_skipped_features=1  
+encodec_discriminator.EncodecDiscriminator:
+    filters = 64
+    n_ffts=[206, 334, 542, 876, 1418, 2296]
+    hop_lengths=[103, 167, 271, 438, 709, 1148]
+    win_lengths = [206, 334, 542, 876, 1418, 2296]
+    normalize_losses = True
+    spec_scale_pow = 0.5
     weights={
-        "feature_matching": 10.0,
-        "adversarial": 5.
+        "feature_matching": 20.0,
+        "adversarial": 0.
         }
 
 autoencoder.trainer.Trainer:
-    discriminator = @descript_discriminator.DescriptDiscriminator()
+    discriminator = @encodec_discriminator.EncodecDiscriminator()
 
 autoencoder.core.WaveformDistance:
     norm = "L1"
@@ -93,6 +103,12 @@ autoencoder.trainer.Trainer:
     freeze_encoder_step=%FREEZE_ENCODER_STEPS
     waveform_losses = [(1., @autoencoder.core.MultiResolutionSTFTLoss())]
     multiband_distances = []
-    reg_losses = [(0.1, @autoencoder.core.SimpleLatentReg())]
+    reg_losses = []
     update_discriminator_every = 4
 
+
+autoencoder.trainer.Trainer.fit:
+    steps_display=100
+    rec_loss_decay=0.999996
+    weight_regularisation_loss=%REGULARISATION_WEIGHT
+    warmup_regularisation_loss=%REGULARISATION_WARMUP

@@ -1,6 +1,0 @@
-from __gin__ import dynamic_registration
-
-import cached_conv 
-
-cached_conv.get_padding:
-    mode = "causal"

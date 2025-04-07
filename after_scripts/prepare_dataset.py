@@ -48,6 +48,10 @@ flags.DEFINE_multi_string('exclude', [],
                           help='kewords to exclude from the search',
                           required=False)
 
+flags.DEFINE_multi_string('include', [],
+                          help='kewords to exclude from the search',
+                          required=False)
+
 flags.DEFINE_bool('normalize',
                   True,
                   help='Normalize audio files magnitude',
@@ -166,7 +170,7 @@ def main(dummy):
     )
 
     audio_files, midi_files, metadatas = get_parser(FLAGS.parser)(
-        FLAGS.input_path, FLAGS.midi_path, FLAGS.ext, FLAGS.exclude)
+        FLAGS.input_path, FLAGS.midi_path, FLAGS.ext, FLAGS.exclude, FLAGS.include)
 
     chunks_buffer, metadatas_buffer = [], []
     midis = []
@@ -351,8 +355,7 @@ def main(dummy):
 
                     if FLAGS.save_waveform:
                         assert array.shape[-1] == FLAGS.num_signal
-                        array = (array.cpu().numpy() * (2**15 - 1)).astype(
-                            np.int16)
+                        array = (array * (2**15 - 1)).astype(np.int16)
                         ae.put_array("waveform", array, dtype=np.int16)
 
                     # EMBEDDING

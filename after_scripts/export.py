@@ -113,8 +113,6 @@ def main(argv):
                 "previous_timbre",
                 torch.zeros(4, self.ae_latents, self.n_signal_timbre))
 
-            self.register_buffer("last_zsem", torch.zeros(4, self.zt_channels))
-
             ## METHODS ##
             self.register_method(
                 "forward",
@@ -351,12 +349,11 @@ def main(argv):
         @torch.jit.export
         def timbre(self, x) -> torch.Tensor:
             x = self.emb_model_timbre.encode(x)
-            self.previous_timbre[:x.shape[0]] = torch.cat(
-                (self.previous_timbre[:x.shape[0]], x), -1)[..., x.shape[-1]:]
+            self.previous_timbre[:x.shape[0]] = torch.cat((self.previous_timbre[:x.shape[0]], x), -1)[..., x.shape[-1]:]
 
             zsem = self.encoder.forward_stream(
                 self.previous_timbre[:x.shape[0]])
-            self.last_zsem = zsem
+            
             return zsem.unsqueeze(-1).repeat((1, 1, self.chunk_size))
 
         @torch.jit.export

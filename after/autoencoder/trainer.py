@@ -65,7 +65,12 @@ class Trainer(nn.Module):
 
         self.init_opt()
 
-    def compute_loss(self, x, y, z=None, x_multiband=None, y_multiband=None):
+    def compute_loss(self,
+                     x,
+                     y,
+                     x_multiband=None,
+                     y_multiband=None,
+                     regloss=None):
         total_loss = 0.
 
         losses = {}
@@ -74,11 +79,11 @@ class Trainer(nn.Module):
             losses[dist.name] = loss_value.item()
             total_loss += loss_value * dist.scale
 
-        if z is not None:
-            for dist in self.reg_losses:
-                loss_value = dist(z)
-                losses[dist.name] = loss_value.item()
-                total_loss += loss_value * dist.scale
+        total_loss = total_loss * self.weight_waveform_losses
+        if regloss is not None:
+            cur_weight = min(self.step / self.warmup_regularisation_loss,
+                             1.) * self.weight_regularisation_loss
+            total_loss += cur_weight * regloss
 
         if x_multiband is not None and y_multiband is not None:
             for dist in self.multiband_distances:
@@ -87,6 +92,8 @@ class Trainer(nn.Module):
                 total_loss += loss_value * dist.scale
 
         losses["total_loss"] = torch.tensor(total_loss).item()
+        if regloss is not None:
+            losses["regularisation_loss"] = regloss.item()
 
         return total_loss, losses
 
@@ -95,6 +102,7 @@ class Trainer(nn.Module):
         for loss in self.reg_losses + self.waveform_losses:
             names.append(loss.name)
         names.extend(["total_loss"])
+        names.extend(["regularisation_loss"])
 
         if True:  #self.model.pqmf_bands > 1:
             for loss in self.multiband_distances:
@@ -106,7 +114,10 @@ class Trainer(nn.Module):
 
     def init_opt(self, lr=1e-4):
         print("warning, putting all models paramters")
-        self.opt = AdamW(self.model.parameters(), lr=lr, betas=(0.9, 0.999))
+
+        parameters = list(self.model.encoder.parameters()) + list(
+            self.model.decoder.parameters())
+        self.opt = AdamW(parameters, lr=lr, betas=(0.9, 0.999))
 
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.opt,
                                                                 gamma=0.999996)
@@ -128,65 +139,68 @@ class Trainer(nn.Module):
             self.opt_dis.load_state_dict(d["opt_dis_state"])
         self.step = step + 1
 
+    def update_waveform_losses(self, rec_loss_decay):
+        if self.step < self.warmup_steps:
+            self.weight_waveform_losses = 1.
+        else:
+            self.weight_waveform_losses = rec_loss_decay**(self.step -
+                                                           self.warmup_steps)
+
     def training_step(self, x):
 
         self.train()
 
-        if True:
-            if (self.discriminator is not None and self.warmup
-                ) and self.step % self.update_discriminator_every == 0:
+        if (self.discriminator is not None and self.warmup
+            ) and self.step % self.update_discriminator_every == 0:
 
+            with torch.no_grad():
+                z, x_multiband, _ = self.model.encode(x, with_multi=True)
+                y, y_multiband = self.model.decode(z, with_multi=True)
+
+            loss_out = {}
+            loss_gen, loss_dis, loss_dis_dict = self.discriminator.compute_losses(
+                x, y)
+
+            self.opt_dis.zero_grad()
+            loss_dis.backward()
+            torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(),
+                                           2.0)
+            self.opt_dis.step()
+            loss_out.update(loss_dis_dict)
+
+        else:
+            if self.step > self.freeze_encoder_step:
                 with torch.no_grad():
-                    z, x_multiband = self.model.encode(x, with_multi=True)
-                    y, y_multiband = self.model.decode(z, with_multi=True)
-                    """loss_ae, loss_out = self.compute_loss(x,
-                                                        y,
-                                                        z=z,
-                                                        x_multiband=x_multiband,
-                                                        y_multiband=y_multiband)"""
-                loss_out = {}
+                    z, x_multiband, regloss = self.model.encode(
+                        x, with_multi=True)
+                    z = z.detach()
+            else:
+                z, x_multiband, regloss = self.model.encode(x, with_multi=True)
+
+            y, y_multiband = self.model.decode(z, with_multi=True)
+            loss_ae, loss_out = self.compute_loss(x,
+                                                  y,
+                                                  x_multiband=x_multiband,
+                                                  y_multiband=y_multiband,
+                                                  regloss=regloss)
+
+            if self.warmup:
                 loss_gen, loss_dis, loss_dis_dict = self.discriminator.compute_losses(
                     x, y)
-
-                self.opt_dis.zero_grad()
-                loss_dis.backward()
-                torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(),
-                                               2.0)
-                self.opt_dis.step()
-                loss_out.update(loss_dis_dict)
-
             else:
-                if self.step > self.freeze_encoder_step:
-                    with torch.no_grad():
-                        z, x_multiband = self.model.encode(x, with_multi=True)
-                        z = z.detach()
-                else:
-                    z, x_multiband = self.model.encode(x, with_multi=True)
+                loss_gen = 0.
+                loss_dis_dict = {
+                    k: 0.
+                    for k in self.discriminator.get_losses_names()
+                }
 
-                y, y_multiband = self.model.decode(z, with_multi=True)
-                loss_ae, loss_out = self.compute_loss(x,
-                                                      y,
-                                                      z=z,
-                                                      x_multiband=x_multiband,
-                                                      y_multiband=y_multiband)
+            loss_gen = loss_gen + loss_ae
 
-                if self.warmup:
-                    loss_gen, loss_dis, loss_dis_dict = self.discriminator.compute_losses(
-                        x, y)
-                else:
-                    loss_gen = 0.
-                    loss_dis_dict = {
-                        k: 0.
-                        for k in self.discriminator.get_losses_names()
-                    }
-
-                loss_gen = loss_gen + loss_ae
-
-                loss_out.update(loss_dis_dict)
-                self.opt.zero_grad()
-                loss_gen.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 2.0)
-                self.opt.step()
+            loss_out.update(loss_dis_dict)
+            self.opt.zero_grad()
+            loss_gen.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 2.0)
+            self.opt.step()
 
         return loss_out
 
@@ -199,10 +213,10 @@ class Trainer(nn.Module):
         with torch.no_grad():
             for i, x in enumerate(validloader):
                 x = x.to(self.device)
-                z, x_multiband = self.model.encode(x, with_multi=True)
+                z, x_multiband, regloss = self.model.encode(x, with_multi=True)
                 y, y_multiband = self.model.decode(z, with_multi=True)
 
-                _, losses = self.compute_loss(x, y, z=z)
+                _, losses = self.compute_loss(x, y)
 
                 for k, v in losses.items():
                     all_losses[k] += v
@@ -216,7 +230,7 @@ class Trainer(nn.Module):
                     break
 
             all_losses = {
-                k: v / len(validloader)
+                k: v / min(50, len(validloader))
                 for k, v in all_losses.items()
             }
             if get_audio:
@@ -232,11 +246,15 @@ class Trainer(nn.Module):
             else:
                 return all_losses, None
 
+    @gin.configurable
     def fit(self,
             trainloader,
             validloader,
             tensorboard=None,
-            steps_display=20):
+            steps_display=20,
+            rec_loss_decay=0.999996,
+            weight_regularisation_loss=1.,
+            warmup_regularisation_loss=100000):
 
         if tensorboard is not None:
             logger = SummaryWriter(log_dir=tensorboard)
@@ -246,6 +264,9 @@ class Trainer(nn.Module):
         tepoch = tqdm(range(self.max_steps), unit="batch")
         all_losses_sum = {key: 0 for key in self.get_losses_names()}
         all_losses_count = {key: 0 for key in self.get_losses_names()}
+        self.weight_waveform_losses = 1.
+        self.weight_regularisation_loss = weight_regularisation_loss
+        self.warmup_regularisation_loss = warmup_regularisation_loss
 
         with open(os.path.join(tensorboard, "config.gin"), "w") as config_out:
             config_out.write(gin.operative_config_str())
@@ -261,6 +282,7 @@ class Trainer(nn.Module):
                     all_losses_count[k] += 1
 
                 tepoch.update(1)
+                self.update_waveform_losses(rec_loss_decay)
 
                 if not self.step % steps_display:
                     tepoch.set_postfix(loss=all_losses_sum["total_loss"] /

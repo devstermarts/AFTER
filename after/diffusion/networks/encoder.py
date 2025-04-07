@@ -128,10 +128,9 @@ class Encoder1D(nn.Module):
                  vector_quantizer=None,
                  spherical_normalization=False,
                  vae_regularisation=False,
-                 antoine_regularisation=False,
+                 ac_regularisation=False,
                  wassertstein_regularisation=False):
         super().__init__()
-
 
         self.use_tanh = use_tanh
         self.channels = channels
@@ -139,7 +138,7 @@ class Encoder1D(nn.Module):
         self.vector_quantizer = vector_quantizer
         self.spherical_normalization = spherical_normalization
         self.vae_regularisation = vae_regularisation
-        self.antoine_regularisation = antoine_regularisation
+        self.ac_regularisation = ac_regularisation
         self.wassertstein_regularisation = wassertstein_regularisation
 
         ratios = [1] + ratios
@@ -259,12 +258,11 @@ class Encoder1D(nn.Module):
 
             z = torch.randn_like(mean) * std + mean
             kl = (mean * mean + var - logvar - 1).sum(1).mean()
-        elif self.antoine_regularisation:
+        elif self.ac_regularisation:
             kl = (torch.nn.functional.relu((abs(z) - 1))).mean()
             mean = z
         elif self.wassertstein_regularisation:
-            kl = self.compute_mmd(z,
-                                  torch.randn_like(z)).mean()
+            kl = self.compute_mmd(z, torch.randn_like(z)).mean()
             mean = z
         else:
             kl = torch.tensor(0.).to(z)

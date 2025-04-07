@@ -195,7 +195,7 @@ class SimpleLatentReg(nn.Module):
         self.name = "Simple Reg"
 
     def forward(self, z):
-        return self.act(abs(z) - self.scale).mean()
+        return self.act(abs(z) - self.scale).mean() + 1.
 
 
 class Snake(nn.Module):

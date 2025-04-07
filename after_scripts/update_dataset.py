@@ -10,34 +10,36 @@ torch.set_grad_enabled(False)
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string(
-    'db_path',
-    default = None,
-    help= 'Database path',
-    required=True)
+flags.DEFINE_string('db_path',
+                    default=None,
+                    help='Database path',
+                    required=True)
 
 flags.DEFINE_string('emb_model_path',
-                    default = None,
+                    default=None,
                     help='Autoencoder model path',
                     required=True)
 
 flags.DEFINE_integer('device',
-                    default = -1,
-                    help='Device for embedding computation',
-                    required=False)
+                     default=-1,
+                     help='Device for embedding computation',
+                     required=False)
 
 flags.DEFINE_integer('batch_size',
-                    32,
-                    help='batch size for embedding computation',
-                    required=False)
+                     32,
+                     help='batch size for embedding computation',
+                     required=False)
+
 
 def main(dummy):
-    device = "cuda:" + str(FLAGS.device) if FLAGS.device>-1 else "cpu"
+    device = "cuda:" + str(FLAGS.device) if FLAGS.device > -1 else "cpu"
     emb_model = torch.jit.load(FLAGS.emb_model_path).to(device)
 
     bsize = FLAGS.batch_size
 
-    dataset = SimpleDataset(keys=["waveform"], path=FLAGS.db_path, readonly=False)
+    dataset = SimpleDataset(keys=["waveform"],
+                            path=FLAGS.db_path,
+                            readonly=False)
     env = dataset.env
 
     total_samples = len(dataset)
@@ -62,15 +64,12 @@ def main(dummy):
                     print(idx)
                     key = dataset.keys[idx]
                     ae = AudioExample(txn.get(key))
-                    ae.put_array("z",
-                                 z.numpy().squeeze(),
-                                 dtype=np.float32)
+                    ae.put_array("z", z.numpy().squeeze(), dtype=np.float32)
                     txn.put(key, bytes(ae))
 
             audios = []
             indexes = []
             pbar.update(1)
-
 
 
 if __name__ == '__main__':

@@ -31,7 +31,7 @@ encoder/diffusion.networks.Encoder1D:
     upscale_out = False
     spherical_normalization = False
     vae_regularisation = False
-    antoine_regularisation = True
+    ac_regularisation = True
 
 encoder/convs.get_padding.mode = 'causal'
 

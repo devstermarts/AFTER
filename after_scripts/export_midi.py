@@ -306,13 +306,16 @@ def main(argv):
         @torch.jit.export
         def timbre(self, x) -> torch.Tensor:
             x = self.emb_model_timbre.encode(x)
+
             self.previous_timbre[:x.shape[0]] = torch.cat(
                 (self.previous_timbre[:x.shape[0]], x), -1)[..., x.shape[-1]:]
 
             zsem = self.encoder.forward_stream(
                 self.previous_timbre[:x.shape[0]])
-            self.last_zsem = zsem
-            return zsem.unsqueeze(-1).repeat((1, 1, x.shape[-1]))
+
+            zsem = zsem.unsqueeze(-1).repeat((1, 1, x.shape[-1]))
+            print("Z sem", zsem.shape)
+            return zsem
 
         @torch.jit.export
         def diffuse(self, x: torch.Tensor) -> torch.Tensor:

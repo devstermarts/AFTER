@@ -13,7 +13,7 @@ import cached_conv as cc
 import gin
 
 from ..core import SnakeBeta as Snake
-from ..core import mod_sigmoid
+from ..core import mod_sigmoid, SimpleLatentReg
 from .pqmf import PQMF, CachedPQMF
 
 
@@ -354,7 +354,6 @@ class Encoder1d(nn.Module):
                  kernel_size: int,
                  resnet_groups: int = 8,
                  out_channels: Optional[int] = None,
-                 recurent_layer: nn.Module = nn.Identity,
                  activation: nn.Module = Snake,
                  use_norm: bool = True):
         super().__init__()
@@ -585,6 +584,7 @@ class Decoder1d(nn.Module):
             x, noise = self.synth(x)
         else:
             noise = torch.tensor(0.)
+            x = self.synth(x)[0]
 
         if self.use_loudness:
             x, amplitude = x.split(x.shape[1] // 2, 1)
@@ -593,7 +593,7 @@ class Decoder1d(nn.Module):
         if self.use_noise:
             x = x + noise
 
-        return torch.tanh(x)
+        return x
 
 
 """
@@ -660,31 +660,70 @@ class NoiserBottleneck(Bottleneck):
 """
 
 
+@gin.configurable
 class TanhBottleneck(nn.Module):
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self,
+                 scale: int = 3,
+                 sigma: float = 0.,
+                 *args,
+                 **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        self.sigma = sigma
+        self.scale = scale
 
-    def forward(
-        self,
-        x: Tensor,
-    ) -> Tensor:
-        x = 3 * torch.tanh(x)
-        return x
+    def forward(self, x: Tensor, apply_noise: bool = True) -> Tensor:
+
+        if apply_noise:
+            x = self.scale * torch.tanh(x) + self.sigma * torch.randn_like(x)
+        else:
+            x = self.scale * torch.tanh(x)
+
+        return x, torch.tensor(0.)
 
 
 class ReluBottleneck(nn.Module):
 
+    def __init__(self,
+                 scale: int = 3,
+                 sigma: float = 0.,
+                 *args,
+                 **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.sigma = sigma
+        self.reg_loss = SimpleLatentReg(scale=scale)
+
+    def forward(self, x: Tensor, apply_noise: bool = False) -> Tensor:
+
+        reg_loss = self.reg_loss(x)
+        if apply_noise:
+            x = x +  self.sigma * torch.randn_like(x)
+        return x, reg_loss
+
+
+class VAEBottleneck(nn.Module):
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
     def forward(
         self,
-        x: Tensor,
+        z: Tensor,
+        return_mean: bool = False,
     ) -> Tensor:
-        x = x
 
-        return x
+        mean, scale = z.chunk(2, 1)
+
+        std = nn.functional.softplus(scale) + 1e-2
+        var = std * std
+        logvar = torch.log(var)
+
+        z = torch.randn_like(mean) * std + mean
+        kl = (mean * mean + var - logvar - 1).sum(1).mean()
+
+        if return_mean:
+            return z, kl, mean
+        return z, kl
 
 
 class GRU(nn.Module):
@@ -743,7 +782,6 @@ class AutoEncoder(nn.Module):
                  kernel_size: int,
                  resnet_groups: int = 8,
                  bottleneck: nn.Module = nn.Identity,
-                 recurrent_layer: nn.Module = nn.Identity,
                  activation: nn.Module = Snake,
                  use_norm: bool = True,
                  decoder_ratio: int = 1,
@@ -763,8 +801,14 @@ class AutoEncoder(nn.Module):
 
         num_blocks = [3] * len(factors)
 
+        #adapt channels if vaebottleneck is used
+        if isinstance(bottleneck, VAEBottleneck):
+            encoder_out_channels = z_channels * 2
+        else:
+            encoder_out_channels = z_channels
+
         self.encoder = Encoder1d(in_channels=in_channels,
-                                 out_channels=z_channels,
+                                 out_channels=encoder_out_channels,
                                  channels=channels,
                                  multipliers=multipliers,
                                  factors=factors,
@@ -772,7 +816,6 @@ class AutoEncoder(nn.Module):
                                  dilations=dilations,
                                  kernel_size=kernel_size,
                                  resnet_groups=resnet_groups,
-                                 recurent_layer=recurrent_layer,
                                  activation=activation,
                                  use_norm=use_norm)
 
@@ -786,7 +829,6 @@ class AutoEncoder(nn.Module):
             dilations=dilations,
             kernel_size=kernel_size,
             resnet_groups=resnet_groups,
-            recurent_layer=recurrent_layer,
             activation=activation,
             use_norm=use_norm,
             use_loudness=use_loudness,
@@ -801,7 +843,7 @@ class AutoEncoder(nn.Module):
 
         z = self.encoder(x)
 
-        z = self.bottleneck(z)
+        z, _ = self.bottleneck(z)
 
         x = self.decoder(z)
 
@@ -814,6 +856,7 @@ class AutoEncoder(nn.Module):
         self,
         x: Tensor,
         with_multi: bool = False,
+        return_mean: bool = False,
     ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
 
         if self.pqmf_bands > 1:
@@ -822,12 +865,17 @@ class AutoEncoder(nn.Module):
             x_multiband = x
 
         z = self.encoder(x_multiband)
-        z = self.bottleneck(z)
+        
+        if return_mean:
+            z, regloss, mean = self.bottleneck(z, return_mean = True)
+            return z, regloss, mean
+        else:
+            z, regloss = self.bottleneck(z)
 
-        if with_multi:
-            return z, x_multiband
+            if with_multi:
+                return z, x_multiband, regloss
 
-        return z
+            return z, regloss
 
     def decode(self, z: Tensor, with_multi: bool = False) -> Tensor:
         x_multiband = self.decoder(z)

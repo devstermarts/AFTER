@@ -8,7 +8,6 @@ import os
 from after.autoencoder import AutoEncoder, Trainer
 from after.dataset import SimpleDataset, CombinedDataset, random_phase_mangle
 
-
 from absl import app, flags
 
 FLAGS = flags.FLAGS
@@ -16,15 +15,22 @@ FLAGS = flags.FLAGS
 cc.use_cached_conv(False)
 
 flags.DEFINE_string("name", "test", "Name of the model")
-flags.DEFINE_string("save_dir", "autoencoder_runs", "Log and checkpoint saving directory")
-flags.DEFINE_multi_string("db_path", "/data/nils/datasets/slakh/train", "Path to the database - can be multiple datasets")
+flags.DEFINE_string("save_dir", "autoencoder_runs",
+                    "Log and checkpoint saving directory")
+flags.DEFINE_multi_string(
+    "db_path", None, "Database path. Use multiple for combined datasets.")
+flags.DEFINE_multi_float("freqs", None,
+                         "Sampling frequencies for multiple datasets.")
 flags.DEFINE_multi_string("config", [], "List of config files")
 flags.DEFINE_integer("restart", 0, "Restart step")
 flags.DEFINE_integer("bsize", 6, "Batch size")
 flags.DEFINE_integer("num_signal", 131072, "Number of signals")
 flags.DEFINE_integer("gpu", -1, "GPU ID")
+flags.DEFINE_integer("num_workers", 0, "Number of workers")
 flags.DEFINE_bool("use_cache", False, "Wether to load the dataset in cache")
-flags.DEFINE_bool("use_psts", False, "Wether to use the pitch shift and time stretching")
+flags.DEFINE_bool("use_psts", False,
+                  "Wether to use the pitch shift and time stretching")
+
 
 def add_gin_extension(config_name: str) -> str:
     if config_name[-4:] != '.gin':
@@ -57,8 +63,7 @@ def main(argv):
 
     ### TEST NETWORKS
     x = torch.randn(1, 1, 4096 * 16)
-    z = autoencoder.encode(x)
-    print(z.shape)
+    z, _ = autoencoder.encode(x)
     y = autoencoder.decode(z)
 
     assert x.shape == y.shape, ValueError(
@@ -119,7 +124,7 @@ def main(argv):
                     p=0.8),
         RandomApply(RandomGain(20), p=0.8)
     ]
-    
+
     if FLAGS.use_psts:
         from after.dataset.transforms import PSTS
         ts = PSTS(sr, ts_min=0.51, ts_max=1.99, pitch_min=-4, pitch_max=+4)
@@ -127,10 +132,15 @@ def main(argv):
 
     def collate_fn(x):
         x = [l["waveform"] for l in x]
-        x = [
-            l[..., i0:i0 + num_signal] for l, i0 in zip(
-                x, torch.randint(x[0].shape[-1] - num_signal, (len(x), )))
-        ]
+        # x = [
+        #     l[..., i0:i0 + num_signal] for l, i0 in zip(
+        #         x, torch.randint(x[0].shape[-1] - num_signal, (len(x), )))
+        # ]
+
+        for i in range(len(x)):
+            x[i] = x[i].reshape(1, -1)
+            i0 = np.random.randint(0, x[i].shape[-1] - num_signal)
+            x[i] = x[i][..., i0:i0 + num_signal]
 
         x = np.stack(x)
         for transform in transforms:
@@ -139,14 +149,7 @@ def main(argv):
         return x
 
     if len(FLAGS.db_path) > 1:
-        main_folder = FLAGS.db_folder
-        audio_folders = [
-            os.path.join(main_folder, f) for f in os.listdir(main_folder)
-        ]
-        db_paths = [f + "/ae_44k" for f in audio_folders]
-
-
-        path_dict = {f: {"name": f, "path": f} for f in db_paths}
+        path_dict = {f: {"name": f, "path": f} for f in FLAGS.db_path}
 
         dataset = CombinedDataset(
             path_dict=path_dict,
@@ -169,16 +172,15 @@ def main(argv):
 
     else:
         dataset = SimpleDataset(path=FLAGS.db_path[0],
-                                      keys=["waveform"],
-                                      init_cache=FLAGS.use_cache,
-                                      split="train")
+                                keys=["waveform"],
+                                init_cache=FLAGS.use_cache,
+                                split="train")
 
         valset = SimpleDataset(path=FLAGS.db_path[0],
-                                     keys=["waveform"],
-                                     split="validation",
-                                     init_cache=FLAGS.use_cache)
+                               keys=["waveform"],
+                               split="validation",
+                               init_cache=FLAGS.use_cache)
         train_sampler, val_sampler = None, None
-        
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -186,7 +188,7 @@ def main(argv):
         shuffle=True if train_sampler is None else False,
         collate_fn=collate_fn,
         drop_last=True,
-        num_workers=0,
+        num_workers=FLAGS.num_workers,
         sampler=train_sampler)
 
     validloader = torch.utils.data.DataLoader(valset,

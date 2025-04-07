@@ -80,7 +80,7 @@ def search_for_audios(
     return audios
 
 
-def simple_audio(audio_folder, midi_folder, extensions, exclude):
+def simple_audio(audio_folder, midi_folder, extensions, exclude, include):
     audio_files = search_for_audios([audio_folder], extensions=extensions)
     audio_files = map(str, audio_files)
     audio_files = map(os.path.abspath, audio_files)
@@ -88,6 +88,11 @@ def simple_audio(audio_folder, midi_folder, extensions, exclude):
 
     audio_files = [
         f for f in audio_files if not any([excl in f for excl in exclude])
+    ]
+
+    audio_files = [
+        f for f in audio_files
+        if any([incl.lower() in f.lower() for incl in include])
     ]
     metadatas = [{"path": audio} for audio in audio_files]
     midi_files = [None] * len(audio_files)

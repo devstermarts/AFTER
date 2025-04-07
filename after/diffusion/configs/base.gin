@@ -32,7 +32,7 @@ encoder/diffusion.networks.Encoder1D:
     upscale_out = False
     spherical_normalization = False
     vae_regularisation = False
-    antoine_regularisation = True
+    ac_regularisation = True
 
 encoder/convs.get_padding.mode = 'causal'
 
@@ -45,7 +45,7 @@ encoder_time/diffusion.networks.Encoder1D:
     upscale_out = False
     spherical_normalization = False
     vae_regularisation = False
-    antoine_regularisation = True
+    ac_regularisation = True
 
 encoder_time/convs.get_padding.mode = 'causal'
 
@@ -57,8 +57,7 @@ classifier/diffusion.networks.Encoder1D:
     use_tanh = False
     average_out = True
     upscale_out = False
-    spherical_normalization = False
-    vae_regularisation = False
+
 
 diffusion.networks.transformer.Denoiser:
     n_channels = %IN_SIZE
