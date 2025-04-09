@@ -48,7 +48,8 @@ flags.DEFINE_multi_string('exclude', [],
                           help='kewords to exclude from the search',
                           required=False)
 
-flags.DEFINE_multi_string('include', None,
+flags.DEFINE_multi_string('include',
+                          None,
                           help='kewords to include in the file search',
                           required=False)
 
@@ -156,7 +157,8 @@ def get_midi(midi_data, chunk_number):
 
 
 def main(dummy):
-    device = "cuda:" + str(FLAGS.gpu) if torch.cuda.is_available() else "cpu"
+    device = "cuda:" + str(
+        FLAGS.gpu) if torch.cuda.is_available() and FLAGS.gpu >= 0 else "cpu"
     print("Using device : ", device)
     emb_model = None if FLAGS.emb_model_path is None else torch.jit.load(
         FLAGS.emb_model_path).to(device).eval()
@@ -169,8 +171,9 @@ def main(dummy):
         readahead=False,
     )
 
-    audio_files, midi_files, metadatas = get_parser(FLAGS.parser)(
-        FLAGS.input_path, FLAGS.midi_path, FLAGS.ext, FLAGS.exclude, FLAGS.include)
+    audio_files, midi_files, metadatas = get_parser(
+        FLAGS.parser)(FLAGS.input_path, FLAGS.midi_path, FLAGS.ext,
+                      FLAGS.exclude, FLAGS.include)
 
     chunks_buffer, metadatas_buffer = [], []
     midis = []
@@ -190,19 +193,19 @@ def main(dummy):
 
     else:
         if FLAGS.waveform_augmentation == "shift_stretch":
-            waveform_augmentation = PSTS(ts_min=0.51,
-                                         ts_max=1.99,
-                                         pitch_min=-6,
-                                         pitch_max=6,
+            waveform_augmentation = PSTS(ts_min=0.76,
+                                         ts_max=1.49,
+                                         pitch_min=-4,
+                                         pitch_max=4,
                                          sr=FLAGS.sample_rate,
                                          chunk_size=FLAGS.num_signal // 4)
         elif FLAGS.waveform_augmentation == "stretch":
-            waveform_augmentation = PSTS(ts_min=0.51,
-                                         ts_max=1.99,
+            waveform_augmentation = PSTS(ts_min=0.76,
+                                         ts_max=1.49,
                                          pitch_min=0,
                                          pitch_max=0,
                                          sr=FLAGS.sample_rate,
-                                         chunk_size=None)
+                                         chunk_size=FLAGS.num_signal // 4)
         elif FLAGS.waveform_augmentation == "shift":
             waveform_augmentation = PSTS(ts_min=1,
                                          ts_max=1,
