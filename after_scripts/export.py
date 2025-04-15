@@ -82,6 +82,7 @@ def main(argv):
             self.ae_latents = ae_latents
             self.emb_model_structure = torch.jit.load(
                 FLAGS.emb_model_path).eval()
+            
             self.emb_model_timbre = torch.jit.load(
                 FLAGS.emb_model_path).eval()
 
@@ -286,36 +287,6 @@ def main(argv):
 
             return dx
 
-        @torch.jit.ignore
-        def model_forward_quadruple(self, x: torch.Tensor, time: torch.Tensor,
-                                    cond: torch.Tensor,
-                                    time_cond: torch.Tensor,
-                                    cache_index: int) -> torch.Tensor:
-
-            guidance_timbre = self.guidance_timbre[0]
-            guidance_structure = self.guidance_structure[0]
-
-            full_time = time.repeat(2, 1, 1)
-            full_x = x.repeat(2, 1, 1)
-
-            full_cond = torch.cat(
-                [cond, self.drop_value * torch.ones_like(cond)])
-
-            full_time_cond = torch.cat([
-                time_cond,
-                time_cond,
-            ])
-
-            dx = self.net(full_x,
-                          time=full_time,
-                          cond=full_cond,
-                          time_cond=full_time_cond,
-                          cache_index=cache_index)
-
-            dx_full, dx_none = torch.chunk(dx, 2, dim=0)
-            dx = dx_none + (dx_full - dx_none) * guidance_timbre
-
-            return dx
 
         def sample(self, x_last: torch.Tensor, cond: torch.Tensor,
                    time_cond: torch.Tensor):

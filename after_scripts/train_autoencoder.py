@@ -47,7 +47,7 @@ def main(argv):
 
     ## GIN CONFIG
     if FLAGS.restart > 0:
-        config_path = os.path.join(FLAGS.save_dir, model_name, "/config.gin")
+        config_path = os.path.join(FLAGS.save_dir, model_name, "config.gin")
         with gin.unlock_config():
             gin.parse_config_files_and_bindings([config_path], [])
 
@@ -204,8 +204,8 @@ def main(argv):
 
     if step_restart > 0:
         print("Loading model from step ", step_restart)
-        path = "./runs/" + model_name
-        trainer.load_model(path, step_restart, FLAGS.restart_load_discrim)
+        path = os.path.join(FLAGS.save_dir, model_name)
+        trainer.load_model(path, step_restart, load_discrim=True)
 
     trainer.fit(dataloader,
                 validloader,

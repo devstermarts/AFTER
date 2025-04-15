@@ -334,6 +334,9 @@ class Base(nn.Module):
                         with torch.no_grad():
                             time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
                                 x1_time_cond, return_full=True)
+                            time_cond = self.drop_value * torch.ones_like(
+                                time_cond)
+                            time_cond_reg = torch.tensor(0.)
                     else:
                         time_cond, time_cond_mean, time_cond_reg = self.encoder_time(
                             x1_time_cond, return_full=True)

@@ -11,7 +11,7 @@ IN_SIZE = None
 N_SIGNAL = None
 
 ZS_CHANNELS = 12
-ZT_CHANNELS = 6
+ZT_CHANNELS = 8
 SR = 44100
 STRUCTURE_TYPE = "audio"
 PHASE_1_STEP = 300000
@@ -25,7 +25,7 @@ diffusion.utils.collate_fn:
 ### ARCHITECTURE ### 
 encoder/diffusion.networks.Encoder1D:
     in_size = %IN_SIZE
-    channels = [64, 64, 128, 256, %ZT_CHANNELS]
+    channels = [64, 128, 256, 512, %ZT_CHANNELS]
     ratios = [1, 2, 2, 2, 1]
     use_tanh = False
     average_out = True
@@ -34,11 +34,9 @@ encoder/diffusion.networks.Encoder1D:
     vae_regularisation = False
     ac_regularisation = True
 
-encoder/convs.get_padding.mode = 'causal'
-
 encoder_time/diffusion.networks.Encoder1D:
     in_size = %IN_SIZE
-    channels = [128, 256, 256, 256, %ZS_CHANNELS]
+    channels = [64, 128, 256, 512, %ZS_CHANNELS]
     ratios = [1, 1, 1, 1]
     use_tanh = False
     average_out = False
@@ -85,7 +83,7 @@ diffusion.model.Base:
     classifier = @classifier/diffusion.networks.Encoder1D()
     time_transform = None
     drop_value = -4.
-    drop_rate = 0.2
+    drop_rate = 0.15
     sigma_data = 1.
 
  

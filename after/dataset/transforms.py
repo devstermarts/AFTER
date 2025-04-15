@@ -101,6 +101,19 @@ class BaseTransform():
         return None
 
 
+from audiomentations import TimeStretch as time_stretch
+
+
+class TimeStretch(BaseTransform):
+
+    def __init__(self, sr, ts_min=0.5, ts_max=2.):
+        super().__init__(sr, "time_stretch")
+        self.transform = time_stretch(min_rate=ts_min, max_rate=ts_max, p=1.0)
+
+    def __call__(self, audio):
+        return self.transform(audio, sample_rate=self.sr)
+
+
 import pedalboard
 
 

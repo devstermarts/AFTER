@@ -8,7 +8,7 @@ from after.dataset.audio_example import AudioExample
 from after.dataset.parsers import get_parser
 import os
 from tqdm import tqdm
-from after.dataset.transforms import BasicPitchPytorch, PSTS, AudioDescriptors, BeatTrack
+from after.dataset.transforms import BasicPitchPytorch, PSTS, AudioDescriptors, BeatTrack, TimeStretch
 import pickle
 import pretty_midi
 from absl import app, flags
@@ -200,12 +200,16 @@ def main(dummy):
                                          sr=FLAGS.sample_rate,
                                          chunk_size=FLAGS.num_signal // 4)
         elif FLAGS.waveform_augmentation == "stretch":
-            waveform_augmentation = PSTS(ts_min=0.76,
-                                         ts_max=1.49,
-                                         pitch_min=0,
-                                         pitch_max=0,
-                                         sr=FLAGS.sample_rate,
-                                         chunk_size=FLAGS.num_signal // 4)
+            # waveform_augmentation = PSTS(ts_min=0.76,
+            #                              ts_max=1.49,
+            #                              pitch_min=0,
+            #                              pitch_max=0,
+            #                              sr=FLAGS.sample_rate,
+            #                              chunk_size=None)
+            waveform_augmentation = TimeStretch(sr=FLAGS.sample_rate,
+                                                ts_min=0.7,
+                                                ts_max=1.5)
+
         elif FLAGS.waveform_augmentation == "shift":
             waveform_augmentation = PSTS(ts_min=1,
                                          ts_max=1,
