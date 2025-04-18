@@ -88,7 +88,7 @@ diffusion.model.Base:
 
 
 diffusion.model.Base.fit:
-    max_steps = 800000
+    max_steps = 1000000
     train_encoder = True
     train_encoder_time = True
 
@@ -96,7 +96,7 @@ diffusion.model.Base.fit:
     timbre_warmup = %PHASE_1_STEP
     adversarial_warmup = 50000
     stop_training_encoder_step = %PHASE_1_STEP
-    stop_training_encoder_time_step = 800000
+    stop_training_encoder_time_step = 1000000
     update_classifier_every = 3
     adversarial_loss = "cosine"
     adversarial_weight = 0.15
