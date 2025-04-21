@@ -236,7 +236,7 @@ class EncodecDiscriminator(nn.Module):
         self.weights = weights
         self.normalize_losses = normalize_losses
 
-    def forward(self, x):
+    def forward_model(self, x):
         logits, features = self.discriminators(x)
         return logits, features
 
@@ -246,10 +246,10 @@ class EncodecDiscriminator(nn.Module):
             "adversarial"
         ]
 
-    def compute_losses(self, x, y):
+    def forward(self, x, y):
         feature_matching_distance = 0.
-        logits_true, feature_true = self.forward(x)
-        logits_fake, feature_fake = self.forward(y)
+        logits_true, feature_true = self.forward_model(x)
+        logits_fake, feature_fake = self.forward_model(y)
 
         dis_loss = torch.tensor(0.)
         adv_loss = torch.tensor(0.)

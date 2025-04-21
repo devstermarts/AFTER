@@ -838,21 +838,26 @@ class AutoEncoder(nn.Module):
 
         self.bottleneck = bottleneck
 
-    def forward(self, x: Tensor) -> Tensor:
+    @torch.jit.ignore
+    def forward(self, x: Tensor, return_all: bool =True) -> Tensor:
+        
+        if self.pqmf_bands > 1:
+            x_multiband = self.pqmf(x)
+        else:
+            x_multiband = x
+
+        z = self.encoder(x_multiband)
+
+        z, regloss = self.bottleneck(z)
+
+        y_multiband = self.decoder(z)
 
         if self.pqmf_bands > 1:
-            x = self.pqmf(x)
+            y = self.pqmf.inverse(y_multiband)
 
-        z = self.encoder(x)
-
-        z, _ = self.bottleneck(z)
-
-        x = self.decoder(z)
-
-        if self.pqmf_bands > 1:
-            x = self.pqmf.inverse(x)
-
-        return x
+        if return_all:
+            return y, y_multiband, z, regloss, x_multiband
+        
 
     def encode(
         self,
