@@ -8,7 +8,7 @@ diffusion.model.Base.fit:
     cycle_consistency = True
     cycle_loss_type = 'mse_margin_0.05'
     cycle_mode = 'interpolant'
-    cycle_scaling = 'none'
+    cycle_scaling = 'ramps'
     cycle_start_step = 600000
     cycle_swap_target = 'cond'
     cycle_weights = [0.05, 0.]

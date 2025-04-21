@@ -198,17 +198,17 @@ def main(dummy):
                                          pitch_min=-4,
                                          pitch_max=4,
                                          sr=FLAGS.sample_rate,
-                                         chunk_size=FLAGS.num_signal // 4)
+                                         chunk_size=FLAGS.num_signal // 4,
+                                         random_silence=True)
+
         elif FLAGS.waveform_augmentation == "stretch":
-            # waveform_augmentation = PSTS(ts_min=0.76,
-            #                              ts_max=1.49,
-            #                              pitch_min=0,
-            #                              pitch_max=0,
-            #                              sr=FLAGS.sample_rate,
-            #                              chunk_size=None)
-            waveform_augmentation = TimeStretch(sr=FLAGS.sample_rate,
-                                                ts_min=0.7,
-                                                ts_max=1.5)
+            waveform_augmentation = PSTS(ts_min=0.7,
+                                         ts_max=1.6,
+                                         pitch_min=0.,
+                                         pitch_max=0.,
+                                         sr=FLAGS.sample_rate,
+                                         chunk_size=FLAGS.num_signal // 4,
+                                         random_silence=True)
 
         elif FLAGS.waveform_augmentation == "shift":
             waveform_augmentation = PSTS(ts_min=1,

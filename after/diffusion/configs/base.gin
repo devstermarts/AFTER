@@ -9,12 +9,13 @@ from cached_conv import convs
 
 IN_SIZE = None
 N_SIGNAL = None
+MAX_STEPS = 1000000
 
 ZS_CHANNELS = 12
-ZT_CHANNELS = 8
+ZT_CHANNELS = 6
 SR = 44100
 STRUCTURE_TYPE = "audio"
-PHASE_1_STEP = 300000
+PHASE_1_STEP = 200000
 
 # Data
 diffusion.utils.collate_fn:
@@ -50,7 +51,7 @@ encoder_time/convs.get_padding.mode = 'causal'
 
 classifier/diffusion.networks.Encoder1D:
     in_size = %ZS_CHANNELS
-    channels = [64, 64, 128, 256, %ZT_CHANNELS]
+    channels = [64, 64, 64, 64, %ZT_CHANNELS]
     ratios = [1, 2, 2, 2, 1]
     use_tanh = False
     average_out = True
@@ -88,7 +89,7 @@ diffusion.model.Base:
 
  
 diffusion.model.Base.fit: 
-    max_steps = 800000
+    max_steps = %MAX_STEPS
     train_encoder = True
     train_encoder_time = True
 
@@ -96,10 +97,10 @@ diffusion.model.Base.fit:
     timbre_warmup = %PHASE_1_STEP
     adversarial_warmup = 50000
     stop_training_encoder_step = %PHASE_1_STEP
-    stop_training_encoder_time_step = 800000
+    stop_training_encoder_time_step = %MAX_STEPS
     update_classifier_every = 3
     adversarial_loss = "cosine"
-    adversarial_weight = 0.05
+    adversarial_weight = 0.1
 
     # Noise augmentation to smooth the latent space
     zsem_noise_aug = 0.05
@@ -113,7 +114,7 @@ diffusion.model.Base.fit:
     cycle_consistency = False
 
     ### DATA ###
-    shuffle_zsem = None
+    shuffle_zsem = [4,8]
 
     ## Log ## 
     steps_valid = 10000

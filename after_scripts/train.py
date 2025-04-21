@@ -109,7 +109,7 @@ def main(argv):
     if augmentation_keys == ["all"]:
         dataset = SimpleDataset(path=FLAGS.db_path[0])
         allkeys = dataset.get_keys()
-        augmentation_keys = ["z"] + [k for k in allkeys if "augment" in k]
+        augmentation_keys = [k for k in allkeys if "augment" in k]
 
     if augmentation_keys is not None:
         print("Augmentation keys", augmentation_keys)

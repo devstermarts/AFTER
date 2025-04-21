@@ -260,6 +260,9 @@ class Base(nn.Module):
                 if (load_encoders[2] or "net." not in key)
             }
 
+            # state_dict_model= {key: value
+            #     for key, value in state_dict_model.items() if "classifier" not in key}
+
             self.load_state_dict(state_dict_model, strict=False)
 
             try:
@@ -583,7 +586,7 @@ class RectifiedFlow(Base):
         super().__init__(**kwargs)
 
     def smooth_function_cond(self, x, slope=7):
-        return 0.5 * (1 + torch.tanh(slope * (0.3 - x)))
+        return 0.5 * (1 + torch.tanh(slope * (0.4 - x)))
 
     def cycle_step(self,
                    interpolant,
