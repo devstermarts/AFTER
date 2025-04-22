@@ -1,0 +1,123 @@
+from __gin__ import dynamic_registration
+
+
+import after
+from after import diffusion
+from cached_conv import convs
+
+
+
+IN_SIZE = None
+N_SIGNAL = None
+
+ZS_CHANNELS = 12
+ZT_CHANNELS = 8
+SR = 44100
+STRUCTURE_TYPE = "audio"
+PHASE_1_STEP = 350000
+
+# Data
+diffusion.utils.collate_fn:
+    n_signal = %N_SIGNAL
+    structure_type = %STRUCTURE_TYPE
+
+
+### ARCHITECTURE ###
+encoder/diffusion.networks.Encoder1D:
+    in_size = %IN_SIZE
+    channels = [64, 128, 256, 512, %ZT_CHANNELS]
+    ratios = [1, 2, 2, 2, 1]
+    use_tanh = False
+    average_out = True
+    upscale_out = False
+    spherical_normalization = False
+    vae_regularisation = False
+    ac_regularisation = True
+
+encoder_time/diffusion.networks.Encoder1D:
+    in_size = %IN_SIZE
+    channels = [64, 128, 256, 512, %ZS_CHANNELS]
+    ratios = [1, 1, 1, 1]
+    use_tanh = False
+    average_out = False
+    upscale_out = False
+    spherical_normalization = False
+    vae_regularisation = False
+    ac_regularisation = True
+
+encoder_time/convs.get_padding.mode = 'causal'
+
+
+classifier/diffusion.networks.Encoder1D:
+    in_size = %ZS_CHANNELS
+    channels = [64, 64, 128, 256, %ZT_CHANNELS]
+    ratios = [1, 2, 2, 2, 1]
+    use_tanh = False
+    average_out = True
+    upscale_out = False
+
+
+diffusion.networks.transformer.Denoiser:
+    n_channels = %IN_SIZE
+    seq_len = %N_SIGNAL
+    embed_dim = 512
+    cond_dim = %ZT_CHANNELS
+    noise_embed_dims = 64
+    n_layers = 6
+    mlp_multiplier = 3
+    dropout  = 0.1
+    causal = True
+    tcond_dim = %ZS_CHANNELS
+    temporal_noise = True
+    tcond_mode = "concat"
+    max_cache_size = 0
+    min_chunk_size = 1
+    pos_emb_type = "rotary"
+
+
+diffusion.model.Base:
+    sr = %SR
+    net= @diffusion.networks.transformer.Denoiser()
+    encoder = @encoder/diffusion.networks.Encoder1D()
+    encoder_time = @encoder_time/diffusion.networks.Encoder1D()
+    classifier = @classifier/diffusion.networks.Encoder1D()
+    time_transform = None
+    drop_value = -4.
+    drop_rate = 0.15
+    sigma_data = 1.
+
+
+diffusion.model.Base.fit:
+    max_steps = 1000000
+    train_encoder = True
+    train_encoder_time = True
+
+    ## Adversarial
+    timbre_warmup = %PHASE_1_STEP
+    adversarial_warmup = 50000
+    stop_training_encoder_step = %PHASE_1_STEP
+    stop_training_encoder_time_step = 99999999
+    update_classifier_every = 3
+    adversarial_loss = "cosine"
+    adversarial_weight = 0.1
+
+    # Noise augmentation to smooth the latent space
+    zsem_noise_aug = 0.05
+    time_cond_noise_aug = 0.02
+
+    ## Encoder regularisation
+    regularisation_weight = 1
+    regularisation_warmup = 1
+
+    ## Cycle loss
+    cycle_consistency = False
+
+    ### DATA ###
+    shuffle_zsem = None
+
+    ## Log ##
+    steps_valid = 5000
+    steps_save = 50000
+
+    use_ema = True
+    lr = 1e-4
