@@ -9,9 +9,6 @@ from after.autoencoder.networks import encodec_discriminator
 import torch
 import cached_conv 
 
-
-
-
 # Model 
 SR = 44100
 LATENT_SIZE = 64
@@ -20,20 +17,20 @@ PQMF_BANDS = 16 #Set to 1 if no pqmf
 
 ## NETWORK 
 BASE_CHANNELS = 64
-KERNEL_SIZE = 5
+KERNEL_SIZE = 3
 DECODER_RATIO = 1.5 # Sets the size of decoder compared to encoder
 USE_NOISE_GENERATOR = False
 
 
 ## TRAINING
-FREEZE_ENCODER_STEPS = 500000
-WARMUP_STEPS = 500000
-MAX_STEPS = 1000000
+FREEZE_ENCODER_STEPS = 1500000
+WARMUP_STEPS = 200000
+MAX_STEPS = 2000000
 REGULARISATION_WEIGHT  = 0.1
 REGULARISATION_WARMUP = 100000
 
-cached_conv.get_padding:
-    mode = "causal"
+# cached_conv.get_padding:
+#     mode = "causal"
 
 SimpleNetsStream.TanhBottleneck:
     sigma = 0.01

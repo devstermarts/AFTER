@@ -7,6 +7,7 @@ import os
 
 from after.autoencoder import AutoEncoder, Trainer
 from after.dataset import SimpleDataset, CombinedDataset, random_phase_mangle
+from accelerate import Accelerator
 
 from absl import app, flags
 
@@ -206,10 +207,18 @@ def main(argv):
         print("Loading model from step ", step_restart)
         path = os.path.join(FLAGS.save_dir, model_name)
         trainer.load_model(path, step_restart, load_discrim=True)
+    
+    accelerator = Accelerator()
 
+    dataloader, _, trainer.model, trainer.discriminator, trainer.opt, trainer.opt_dis = accelerator.prepare(
+        dataloader, validloader,  trainer.model, trainer.discriminator, trainer.opt, trainer.opt_dis
+    )
+    trainer.device = accelerator.device
+    
     trainer.fit(dataloader,
                 validloader,
-                tensorboard=os.path.join(FLAGS.save_dir, model_name))
+                tensorboard=os.path.join(FLAGS.save_dir, model_name),
+                accelerator = accelerator)
 
 
 if __name__ == "__main__":
