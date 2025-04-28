@@ -24,8 +24,10 @@ flags.DEFINE_integer("step", default=0, help="Step number of checkpoint")
 flags.DEFINE_string("emb_model_path",
                     default="./pretrained/test.ts",
                     help="Path to encoder model")
-flags.DEFINE_integer("chunk_size", default=4, help="Chunk size")
-flags.DEFINE_integer("max_cache_size", default=128, help="Training length (in number of latent samples)")
+flags.DEFINE_integer("chunk_size", default=8, help="Chunk size")
+flags.DEFINE_integer("max_cache_size",
+                     default=128,
+                     help="Training length (in number of latent samples)")
 
 
 def main(argv):
@@ -34,7 +36,7 @@ def main(argv):
     checkpoint_path = folder + "/checkpoint" + str(FLAGS.step) + "_EMA.pt"
     config = folder + "/config.gin"
 
-    out_name = os.path.join(folder, "after.audio." + folder.split("/")[-1] + ".ts")
+    out_name = os.path.join(folder, folder.split("/")[-1] + ".ts")
 
     # Parse config
     gin.parse_config_file(config)
@@ -82,9 +84,8 @@ def main(argv):
             self.ae_latents = ae_latents
             self.emb_model_structure = torch.jit.load(
                 FLAGS.emb_model_path).eval()
-            
-            self.emb_model_timbre = torch.jit.load(
-                FLAGS.emb_model_path).eval()
+
+            self.emb_model_timbre = torch.jit.load(FLAGS.emb_model_path).eval()
 
             self.drop_value = blender.drop_value
 
@@ -287,7 +288,6 @@ def main(argv):
 
             return dx
 
-
         def sample(self, x_last: torch.Tensor, cond: torch.Tensor,
                    time_cond: torch.Tensor):
 
@@ -311,11 +311,12 @@ def main(argv):
         @torch.jit.export
         def timbre(self, x) -> torch.Tensor:
             x = self.emb_model_timbre.encode(x)
-            self.previous_timbre[:x.shape[0]] = torch.cat((self.previous_timbre[:x.shape[0]], x), -1)[..., x.shape[-1]:]
+            self.previous_timbre[:x.shape[0]] = torch.cat(
+                (self.previous_timbre[:x.shape[0]], x), -1)[..., x.shape[-1]:]
 
             zsem = self.encoder.forward_stream(
                 self.previous_timbre[:x.shape[0]])
-            
+
             return zsem.unsqueeze(-1).repeat((1, 1, self.chunk_size))
 
         @torch.jit.export

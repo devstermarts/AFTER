@@ -283,6 +283,8 @@ class Base(nn.Module):
         self.tepoch = tqdm(total=max_steps, unit="batch")
 
         n_epochs = max_steps // len(dataloader) + 1
+        if restart_step is not None:
+            n_epochs = n_epochs - restart_step // len(dataloader)
         losses_sum = {}
         losses_sum_count = {}
 

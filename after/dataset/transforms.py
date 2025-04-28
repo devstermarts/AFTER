@@ -106,12 +106,29 @@ from audiomentations import TimeStretch as time_stretch
 
 class TimeStretch(BaseTransform):
 
-    def __init__(self, sr, ts_min=0.5, ts_max=2.):
+    def __init__(self, sr, ts_min=0.5, ts_max=2., random_silence=True):
         super().__init__(sr, "time_stretch")
         self.transform = time_stretch(min_rate=ts_min, max_rate=ts_max, p=1.0)
 
+        if random_silence:
+            self.silence_transform = TimeMask(
+                min_band_part=0.075,
+                max_band_part=0.1,
+                fade=True,
+                p=1.0,
+            )
+        else:
+            self.silence_transform = None
+
     def __call__(self, audio):
-        return self.transform(audio, sample_rate=self.sr)
+        audio = self.transform(audio, sample_rate=self.sr)
+
+        if self.silence_transform is not None:
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+        return audio
 
 
 import pedalboard
@@ -138,7 +155,7 @@ class PSTS(BaseTransform):
         if random_silence:
             self.silence_transform = TimeMask(
                 min_band_part=0.07,
-                max_band_part=0.25,
+                max_band_part=0.15,
                 fade=True,
                 p=1.0,
             )
@@ -190,6 +207,7 @@ class PSTS(BaseTransform):
     def __call__(self, audio):
         audio = self.process_audio(audio)
         if self.silence_transform is not None:
+            audio = self.silence_transform(audio, sample_rate=self.sr)
             audio = self.silence_transform(audio, sample_rate=self.sr)
         return audio
 

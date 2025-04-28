@@ -45,12 +45,13 @@ After training, the model has to be exported to a torchscript file using
 ```bash
 after export_autoencoder  --model_path autoencoder_runs/AE_model_name --step 1000000
 ```
+This will save two .ts files in the run folder, one for streaming and one for offline inference (export_stream.ts and export.ts respectively).
 
 ### AFTER training
 First, you need to prepare your dataset before training. Since our diffusion model works in the latent space of the autoencoder, we pre-compute the latent embeddings to speed up training : 
 
 ```bash
-after prepare_dataset --input_path /audio/folder --output_path /dataset/path --emb_model_path pretrained/AE_model_name.ts
+after prepare_dataset --input_path /audio/folder --output_path /dataset/path --emb_model_path AE_model_run_path/export.ts
 ```
 
 - `num_signal` flag sets the duration of the audio chunks for training in number of samples (must be a power of 2). (default: 524288 ~ 11 seconds)
@@ -64,7 +65,7 @@ If you plan to have more advanced use of the models, please refer to the help fu
 Then, a training is started with 
 
 ```bash
-after train  --name diff_model_name --db_path /dataset/path --emb_model_path pretrained/AE_model_name.ts --config CONFIG_NAME
+after train  --name diff_model_name --db_path /dataset/path --emb_model_path AE_model_run_path/export.ts --config CONFIG_NAME
 ```
 
 Different configurations are available in `diffusion/configs` and can be combined : 
@@ -111,13 +112,13 @@ Once the training is complete, you can export the model to an [_nn_tilde_](https
 
 For an audio-to-audio model :
 ```bash
-after export --model_path diff_model_name --emb_model_path pretrained/AE_model_name_stream.ts --step 800000
+after export --model_path diff_model_name --emb_model_path AE_model_run_path/export_stream.ts --step 800000
 ```
 
 For a MIDI-to-audio model :
 
 ```bash
-after export_midi --model_path diff_model_name --emb_model_path pretrained/AE_model_name_stream.ts --npoly 4 --step 800000
+after export_midi --model_path diff_model_name --emb_model_path AE_model_run_path/export_stream.ts --npoly 4 --step 800000
 ```
 
 where `npoly` sets the number for voices for polyphony. Make sure to use the streaming version of the exported autoencoder (denoted by _stream.ts).

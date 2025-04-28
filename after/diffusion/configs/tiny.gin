@@ -88,7 +88,7 @@ diffusion.model.Base:
 
  
 diffusion.model.Base.fit: 
-    max_steps = 400000
+    max_steps = %MAX_STEPS
     train_encoder = True
     train_encoder_time = True
 
@@ -96,13 +96,14 @@ diffusion.model.Base.fit:
     timbre_warmup = %PHASE_1_STEP
     adversarial_warmup = 50000
     stop_training_encoder_step = %PHASE_1_STEP
-    stop_training_encoder_time_step = 1000000
+    stop_training_encoder_time_step = %MAX_STEPS
     update_classifier_every = 3
     adversarial_loss = "cosine"
-    adversarial_weight = 0.05
+    adversarial_weight = 0.075
 
     # Noise augmentation to smooth the latent space
-    zsem_noise_aug = 0.1
+    zsem_noise_aug = 0.05
+    time_cond_noise_aug = 0.02
 
     ## Encoder regularisation
     regularisation_weight = 1
@@ -110,13 +111,13 @@ diffusion.model.Base.fit:
 
     ## Cycle loss
     cycle_consistency = False
-    
+
     ### DATA ###
-    shuffle_zsem = None
+    shuffle_zsem = [4,8]
 
     ## Log ## 
     steps_valid = 10000
-    steps_save = 50000
+    steps_save = 100000
     
     use_ema = True
     lr = 1e-4

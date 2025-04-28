@@ -676,7 +676,6 @@ class TanhBottleneck(nn.Module):
                 apply_noise: bool = True) -> Tuple[Tensor, Tensor]:
 
         if apply_noise:
-            print("hy")
             x = self.scale * torch.tanh(x) + self.sigma * torch.randn_like(x)
         else:
             x = self.scale * torch.tanh(x)
@@ -839,8 +838,8 @@ class AutoEncoder(nn.Module):
         self.bottleneck = bottleneck
 
     @torch.jit.ignore
-    def forward(self, x: Tensor, return_all: bool =True) -> Tensor:
-        
+    def forward(self, x: Tensor, return_all: bool = True) -> Tensor:
+
         if self.pqmf_bands > 1:
             x_multiband = self.pqmf(x)
         else:
@@ -857,7 +856,6 @@ class AutoEncoder(nn.Module):
 
         if return_all:
             return y, y_multiband, z, regloss, x_multiband
-        
 
     def encode(
         self,

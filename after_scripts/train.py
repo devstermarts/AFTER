@@ -109,7 +109,9 @@ def main(argv):
     if augmentation_keys == ["all"]:
         dataset = SimpleDataset(path=FLAGS.db_path[0])
         allkeys = dataset.get_keys()
-        augmentation_keys = [k for k in allkeys if "augment" in k]
+        augmentation_keys = [
+            k for k in allkeys if "augment" in k or "aug" in k
+        ]
 
     if augmentation_keys is not None:
         print("Augmentation keys", augmentation_keys)
@@ -177,7 +179,7 @@ def main(argv):
             batch_size=FLAGS.bsize,
             shuffle=False,
             num_workers=FLAGS.num_workers,
-            drop_last=False,
+            drop_last=True,
             collate_fn=collate_fn,
             sampler=val_sampler if val_sampler is not None else None)
     else:
