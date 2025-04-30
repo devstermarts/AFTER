@@ -16,7 +16,7 @@ class SimpleDataset(torch.utils.data.Dataset):
         num_sequential=100,
         recache_every=None,
         init_cache=False,
-        validation_size=0.1,
+        validation_size=0.02,
         split=None,
         readonly=True,
     ) -> None:

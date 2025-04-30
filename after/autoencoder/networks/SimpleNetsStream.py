@@ -671,7 +671,9 @@ class TanhBottleneck(nn.Module):
         self.sigma = sigma
         self.scale = scale
 
-    def forward(self, x: Tensor, apply_noise: bool = True) -> Tuple[Tensor, Tensor]:
+    def forward(self,
+                x: Tensor,
+                apply_noise: bool = True) -> Tuple[Tensor, Tensor]:
 
         if apply_noise:
             x = self.scale * torch.tanh(x) + self.sigma * torch.randn_like(x)
@@ -696,7 +698,7 @@ class ReluBottleneck(nn.Module):
 
         reg_loss = self.reg_loss(x)
         if apply_noise:
-            x = x +  self.sigma * torch.randn_like(x)
+            x = x + self.sigma * torch.randn_like(x)
         return x, reg_loss
 
 
@@ -836,8 +838,8 @@ class AutoEncoder(nn.Module):
         self.bottleneck = bottleneck
 
     @torch.jit.ignore
-    def forward(self, x: Tensor, return_all: bool =True) -> Tensor:
-        
+    def forward(self, x: Tensor, return_all: bool = True) -> Tensor:
+
         if self.pqmf_bands > 1:
             x_multiband = self.pqmf(x)
         else:
@@ -854,7 +856,6 @@ class AutoEncoder(nn.Module):
 
         if return_all:
             return y, y_multiband, z, regloss, x_multiband
-        
 
     def encode(
         self,
@@ -869,9 +870,9 @@ class AutoEncoder(nn.Module):
             x_multiband = x
 
         z = self.encoder(x_multiband)
-        
+
         if return_mean:
-            z, regloss, mean = self.bottleneck(z, return_mean = True)
+            z, regloss, mean = self.bottleneck(z, return_mean=True)
             return z, regloss, mean
         else:
             z, regloss = self.bottleneck(z)

@@ -106,15 +106,33 @@ from audiomentations import TimeStretch as time_stretch
 
 class TimeStretch(BaseTransform):
 
-    def __init__(self, sr, ts_min=0.5, ts_max=2.):
+    def __init__(self, sr, ts_min=0.5, ts_max=2., random_silence=True):
         super().__init__(sr, "time_stretch")
         self.transform = time_stretch(min_rate=ts_min, max_rate=ts_max, p=1.0)
 
+        if random_silence:
+            self.silence_transform = TimeMask(
+                min_band_part=0.075,
+                max_band_part=0.1,
+                fade=True,
+                p=1.0,
+            )
+        else:
+            self.silence_transform = None
+
     def __call__(self, audio):
-        return self.transform(audio, sample_rate=self.sr)
+        audio = self.transform(audio, sample_rate=self.sr)
+
+        if self.silence_transform is not None:
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+        return audio
 
 
 import pedalboard
+from audiomentations import TimeMask
 
 
 class PSTS(BaseTransform):
@@ -125,13 +143,24 @@ class PSTS(BaseTransform):
                  ts_max=1.99,
                  pitch_min=-4,
                  pitch_max=+4,
-                 chunk_size=None):
+                 chunk_size=None,
+                 random_silence=True):
         super().__init__(sr, "pstc")
         self.ts_min = ts_min
         self.ts_max = ts_max
         self.pitch_min = pitch_min
         self.pitch_max = pitch_max
         self.chunk_size = chunk_size
+
+        if random_silence:
+            self.silence_transform = TimeMask(
+                min_band_part=0.07,
+                max_band_part=0.15,
+                fade=True,
+                p=1.0,
+            )
+        else:
+            self.silence_transform = None
 
     def process_audio(self, audio):
         if self.pitch_min == self.pitch_max:
@@ -176,7 +205,66 @@ class PSTS(BaseTransform):
         return audio_transformed
 
     def __call__(self, audio):
-        return self.process_audio(audio)
+        audio = self.process_audio(audio)
+        if self.silence_transform is not None:
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+            audio = self.silence_transform(audio, sample_rate=self.sr)
+        return audio
+
+
+class RandomSilenceTransform(BaseTransform):
+
+    def __init__(self,
+                 sr,
+                 name="RandomSilence",
+                 min_width=0.1,
+                 max_width=0.5,
+                 min_slope=0.01,
+                 max_slope=0.1):
+        """
+        :param sr: Sample rate of the audio
+        :param name: Name of the transform
+        :param min_width: Minimum duration of silence as a fraction of total audio length
+        :param max_width: Maximum duration of silence as a fraction of total audio length
+        :param min_slope: Minimum duration of the fade in/out as a fraction of total audio length
+        :param max_slope: Maximum duration of the fade in/out as a fraction of total audio length
+        """
+        super().__init__(sr, name)
+        self.min_width = min_width
+        self.max_width = max_width
+        self.min_slope = min_slope
+        self.max_slope = max_slope
+
+    def __call__(self, x: np.array, return_envelope: bool = False) -> np.array:
+        length = len(x)
+        min_samples = int(self.min_width * length)
+        max_samples = int(self.max_width * length)
+
+        width = np.random.randint(min_samples, max_samples)
+
+        min_fade_samples = int(self.min_slope * length)
+        max_fade_samples = int(self.max_slope * length)
+        fade_samples = np.random.randint(min_fade_samples, max_fade_samples)
+        start = np.random.randint(fade_samples,
+                                  length - max_samples - fade_samples)
+
+        # Generate envelope
+        envelope = np.ones_like(x)
+
+        # Apply fade-in
+        fade_in = np.linspace(1, 0, fade_samples)
+        envelope[start - fade_samples:start] = fade_in
+
+        # Apply silence
+        envelope[start:start + width] = 0
+
+        # Apply fade-out
+        fade_out = np.linspace(0, 1, fade_samples)
+        envelope[start + width:start + width + fade_samples] = fade_out
+        if return_envelope:
+            return x * envelope, envelope
+        else:
+            return x * envelope
 
 
 import librosa
