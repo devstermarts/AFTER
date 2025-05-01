@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser()
 FLAGS = flags.FLAGS
 # Flags definition
 flags.DEFINE_string("model_path",
-                    default="./after_runs/test",
+                    default=".",
                     help="Name of the experiment folder")
 flags.DEFINE_integer("step", default=0, help="Step number of checkpoint")
 flags.DEFINE_string("emb_model_path",
@@ -36,7 +36,7 @@ def main(argv):
     checkpoint_path = folder + "/checkpoint" + str(FLAGS.step) + "_EMA.pt"
     config = folder + "/config.gin"
 
-    out_name = os.path.join(folder, folder.split("/")[-1] + ".ts")
+    out_name = os.path.join(folder, "after.audio." + folder.split("/")[-1] + str(FLAGS.chunk_size) + "_" + str(FLAGS.max_cache_size) + ".ts")
 
     # Parse config
     gin.parse_config_file(config)
