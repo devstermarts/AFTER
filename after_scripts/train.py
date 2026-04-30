@@ -15,13 +15,17 @@ from after.diffusion.utils import collate_fn, get_datasets
 from after.encoder_ssl.utils import collate_fn_simdino
 from after.diffusion.model import RectifiedFlow
 from after.encoder_ssl.model import SimDino
+from after.utils import resolve_device
 
 FLAGS = flags.FLAGS
 
 # MODEL
 flags.DEFINE_string("name", "test", "Name of the model.")
 flags.DEFINE_integer("restart", None, "Restart flag.")
-flags.DEFINE_integer("gpu", 0, "GPU ID to use.")
+flags.DEFINE_integer("gpu", 0, "GPU ID to use (legacy; --device takes precedence).")
+flags.DEFINE_string("device", None,
+                    "Torch device: 'cpu', 'cuda', 'cuda:N', 'mps', or 'auto'. "
+                    "Overrides --gpu when set.")
 flags.DEFINE_multi_string("config", [], "List of config files.")
 
 # Training
@@ -84,36 +88,7 @@ def main(argv):
         with gin.unlock_config():
             gin.parse_config_files_and_bindings([config_path], [])
 
-    # Resolve DB paths: merge --db_path and --db_folder sub-directories
-    db_paths = list(FLAGS.db_path)
-    if FLAGS.db_folder is not None:
-        folder = pathlib.Path(FLAGS.db_folder)
-        subdirs = sorted([p for p in folder.iterdir() if p.is_dir()])
-        if not subdirs:
-            raise ValueError(
-                f"--db_folder '{FLAGS.db_folder}' contains no sub-directories."
-            )
-        db_paths += [str(p) for p in subdirs]
-
-    if not db_paths:
-        raise ValueError("No dataset provided. Use --db_path or --db_folder.")
-
-    # Dataset summary
-    print("\n=== Datasets ===")
-    total_entries = 0
-    for p in db_paths:
-        try:
-            n = len(SimpleDataset(path=p))
-        except Exception:
-            n = -1
-        label = f"  {n:>7,} entries" if n >= 0 else "  (could not read)"
-        print(f"  {pathlib.Path(p).name:<40} {label}  [{p}]")
-        if n > 0:
-            total_entries += n
-    print(f"  {'TOTAL':<40}   {total_entries:>7,} entries")
-    print("================\n")
-
-    device = "cuda:" + str(FLAGS.gpu) if FLAGS.gpu >= 0 else "cpu"
+    device = resolve_device(FLAGS.device, FLAGS.gpu)
 
     ######### BUILD MODEL #########
     emb_model = torch.jit.load(FLAGS.emb_model_path)  #.to(device)

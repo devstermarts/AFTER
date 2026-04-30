@@ -8,6 +8,7 @@ import pathlib
 from after.autoencoder import Trainer
 from after.autoencoder.transforms import PhaseMangle, RandomGain, PitchShift, TimeStretch, TransformPipeline
 from after.dataset import SimpleDataset, CombinedDataset
+from after.utils import resolve_device
 
 from absl import app, flags
 
@@ -35,6 +36,9 @@ flags.DEFINE_integer("batch_size", 6,
                      "Batch size. Preferred over --bsize if set.")
 flags.DEFINE_integer("n_signal", 131072, "Number of signal samples.")
 flags.DEFINE_integer("gpu", 0, "GPU ID")
+flags.DEFINE_string("device", None,
+                    "Torch device: 'cpu', 'cuda', 'cuda:N', 'mps', or 'auto'. "
+                    "Overrides --gpu when set.")
 flags.DEFINE_bool("ddp", False, "Use DistributedDataParallel")
 flags.DEFINE_integer("num_workers", 0, "Number of workers")
 flags.DEFINE_bool("use_cache", False, "Wether to load the dataset in cache")
@@ -79,26 +83,7 @@ def main(argv):
         device = "cuda:" + str(local_rank)
         device_ids = [local_rank]
     else:
-        device_ids = None
-        if FLAGS.gpus:
-            device_ids = [
-                int(x) for x in FLAGS.gpus.split(",") if x.strip() != ""
-            ]
-        elif FLAGS.gpu >= 0:
-            device_ids = [FLAGS.gpu]
-        if device_ids is not None and len(device_ids) == 0:
-            device_ids = None
-
-        if device_ids is not None:
-            if not torch.cuda.is_available():
-                raise ValueError(
-                    "CUDA not available but GPU IDs were provided.")
-            if max(device_ids) >= torch.cuda.device_count():
-                raise ValueError("Requested GPU ID is not available.")
-            device = "cuda:" + str(device_ids[0])
-        else:
-            device = "cpu"
-            device_ids = None
+        device = resolve_device(FLAGS.device, FLAGS.gpu)
 
     ## GIN CONFIG
     if FLAGS.restart is not None:

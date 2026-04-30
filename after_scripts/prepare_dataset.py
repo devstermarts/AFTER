@@ -23,6 +23,7 @@ from tqdm import tqdm
 from after.dataset.audio_example import AudioExample
 from after.dataset.parsers import get_parser
 from after.dataset.transforms import AudioAugment, AudioDescriptors, BasicPitchPytorch
+from after.utils import resolve_device
 
 torch.set_grad_enabled(False)
 FLAGS = flags.FLAGS
@@ -60,7 +61,14 @@ flags.DEFINE_bool(
 flags.DEFINE_string('emb_model_path', None,
                     'TorchScript (.pt) embedding model')
 flags.DEFINE_integer('batch_size', 4, 'Chunk batch size for embedding')
-flags.DEFINE_integer('gpu', 0, 'CUDA device index; -1 for CPU')
+flags.DEFINE_integer('gpu',
+                     "-1",
+                     help='Legacy CUDA gpu index. Use -1 for cpu. '
+                          '--device takes precedence when set.',
+                     required=False)
+flags.DEFINE_string('device', None,
+                    "Torch device: 'cpu', 'cuda', 'cuda:N', 'mps', or 'auto'. "
+                    "Overrides --gpu when set.")
 
 # --- Descriptors ---
 flags.DEFINE_multi_string('descriptors', [],
@@ -449,8 +457,8 @@ def process_db(input_path, output_path, device, emb_model, z_length,
 
 
 def main(_):
-    device = f"cuda:{FLAGS.gpu}" if torch.cuda.is_available(
-    ) and FLAGS.gpu >= 0 else "cpu"
+    
+    device = resolve_device(FLAGS.device, FLAGS.gpu)
 
     print(f"Device: {device}")
 
