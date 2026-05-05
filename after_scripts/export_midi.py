@@ -4,10 +4,12 @@ import torch
 
 import argparse
 import os
+import pathlib
 from after.diffusion import RectifiedFlow
 from after.dataset import CombinedDataset
 from after.diffusion.latent_plot import prepare_training, train_autoencoder, generate_plot
 
+torch.jit.optimized_execution(False)
 torch.set_grad_enabled(False)
 
 import gin
@@ -21,13 +23,15 @@ parser = argparse.ArgumentParser()
 FLAGS = flags.FLAGS
 # Flags definition
 flags.DEFINE_string("model_path",
-                    default="./after_runs/test",
+                    default=None,
                     help="Name of the experiment folder")
-flags.DEFINE_integer("step", default=None, help="Step number of checkpoint")
+flags.DEFINE_integer(
+    "step",
+    default=None,
+    help="Step number of checkpoint - defaults to last available")
 flags.DEFINE_string("emb_model_path",
-                    default="./pretrained/test.ts",
-                    help="Path to audio codec")
-flags.DEFINE_integer("chunk_size", default=4, help="Chunk size")
+                    default=None,
+                    help="Path to the codec - use streamable version")
 flags.DEFINE_integer("n_poly", default=8, help="Number of polyphonic voices")
 flags.DEFINE_bool("latent_project",
                   default=True,
@@ -36,6 +40,47 @@ flags.DEFINE_float(
     "latent_range",
     default=1.0,
     help="Scale the latent space visualisation to [-latent_range, latent_range]"
+)
+flags.DEFINE_string(
+    "label_mode",
+    default="dataset",
+    help=
+    "Mode for labeling data and color the map. Chose( between 'dataset' for multi dataset and 'file' when using meaningful file names."
+)
+
+flags.DEFINE_integer("num_steps",
+                     default=20000,
+                     help="Number of steps to train the AE map model")
+
+flags.DEFINE_integer(
+    "num_examples",
+    default=None,
+    help=
+    "Number of sampled examples to build the map - defaults to full dataset")
+
+flags.DEFINE_string(
+    "ae_mode",
+    default="linear",
+    help=
+    "Default organisation of the map (linear, spherical, lambert). Spherical and lambert are mapped on to a sphere and with (polar/lambert) coordinates respectively, linear is a simple 2D map."
+)
+
+flags.DEFINE_bool("reload_embeddings",
+                  default=False,
+                  help="Reload precomputed timbre embeddings if available")
+
+flags.DEFINE_multi_string(
+    "db_path",
+    default=[],
+    help=
+    "Dataset path(s) for the latent map. Overrides the db_list from the config when provided."
+)
+
+flags.DEFINE_string(
+    "db_folder",
+    default=None,
+    help=
+    "Folder whose sub-directories are each an LMDB dataset. Merged with --db_path entries."
 )
 
 
@@ -46,6 +91,18 @@ class DummyIdentity(nn.Module):
         super().__init__()
         self.encoder = nn.Identity()
         self.decoder = nn.Identity()
+
+    def forward(self, x: torch.Tensor):
+        return x
+
+    def forward_stream(self, x: torch.Tensor):
+        return x
+
+    def encode(self, x: torch.Tensor):
+        return x
+
+    def decode(self, x: torch.Tensor):
+        return x
 
 
 def main(argv):
@@ -70,16 +127,54 @@ def main(argv):
                             "after.midi." + folder.split("/")[-1] + ".ts")
     # Parse config
     gin.parse_config_file(config)
-    SR = gin.query_parameter("%SR")
 
+    # Resolve codec path
+    emb_model_path = FLAGS.emb_model_path
+    if emb_model_path is None:
+        try:
+            trained_path = gin.query_parameter(
+                "diffusion.utils.get_datasets.emb_model_path")
+        except ValueError:
+            trained_path = None
+        if not trained_path:
+            raise RuntimeError(
+                "No --emb_model_path provided and none saved in config.\n"
+                "Re-run training or pass --emb_model_path.")
+        stream_path = str(
+            pathlib.Path(trained_path).with_stem(
+                pathlib.Path(trained_path).stem + "_stream"))
+        if os.path.exists(stream_path):
+            emb_model_path = stream_path
+            print(f"Using streaming codec: {emb_model_path}")
+        else:
+            raise FileNotFoundError(
+                f"Streaming codec not found at '{stream_path}'.\n"
+                f"Please provide one explicitly with --emb_model_path.")
+
+    # ENABLE THE CACHE SYSTEM
     with gin.unlock_config():
         try:
-            cache_size = gin.query_parameter("%LOCAL_ATTENTION_SIZE")
-            gin.bind_parameter("transformerv2.MHAttention.max_cache_size",
-                               cache_size)
-        except:
-            gin.bind_parameter("transformer.Denoiser.max_cache_size",
-                               gin.query_parameter("%N_SIGNAL"))
+            gin.bind_parameter("transformerv2.DenoiserV2.streaming", True)
+        except ValueError:
+            try:
+                cache_size = gin.query_parameter("%LOCAL_ATTENTION_SIZE")
+                gin.bind_parameter("transformerv2.MHAttention.max_cache_size",
+                                   cache_size)
+            except ValueError:
+                try:
+                    n_signal_param = gin.query_parameter("%N_SIGNAL")
+                    gin.bind_parameter("transformer.Denoiser.max_cache_size",
+                                       n_signal_param)
+                except ValueError:
+                    pass
+        try:
+            gin.bind_parameter("transformerv2.DenoiserV2.max_diffusion_steps", 12)
+        except ValueError:
+            pass
+        try:
+            gin.bind_parameter("transformerv2.DenoiserV2.max_batch_size", 4)
+        except ValueError:
+            pass
 
     # Instantiate model
     blender = RectifiedFlow()
@@ -89,7 +184,6 @@ def main(argv):
     blender.load_state_dict(state_dict, strict=False)
 
     # Emb model
-    # Send to device
     blender = blender.eval()
 
     # Get some parameters
@@ -97,34 +191,62 @@ def main(argv):
     n_signal_timbre = gin.query_parameter('%N_SIGNAL')
     zt_channels = gin.query_parameter("%ZT_CHANNELS")
     ae_latents = gin.query_parameter("%IN_SIZE")
+    model_chunk_size = gin.query_parameter("%ATTENTION_CHUNK_SIZE")
 
     ### GENERATE EMBEDDING PLOT ###
     if FLAGS.latent_project:
 
         try:
-            path_dict = gin.query_parameter("utils.get_datasets.path_dict")
+            if FLAGS.db_path or FLAGS.db_folder:
+                db_list = list(FLAGS.db_path)
+                if FLAGS.db_folder is not None:
+                    subdirs = sorted([
+                        str(p)
+                        for p in pathlib.Path(FLAGS.db_folder).iterdir()
+                        if p.is_dir()
+                    ])
+                    db_list += subdirs
+            else:
+                try:
+                    db_list = gin.query_parameter(
+                        "diffusion.utils.get_datasets.db_list")
+                except ValueError:
+                    try:
+                        path_dict_legacy = gin.query_parameter(
+                            "utils.get_datasets.path_dict")
+                        db_list = list(path_dict_legacy.keys())
+                    except ValueError:
+                        db_list = []
+            path_dict = {k: {"path": k, "name": k} for k in db_list}
             dataset = CombinedDataset(path_dict=path_dict,
                                       keys=["z", "metadata"])
 
-            if blender.post_encoder is not None:
-                encoder = nn.Sequential(blender.encoder, blender.post_encoder)
-            else:
-                encoder = blender.encoder
+            tmp = os.path.join(FLAGS.model_path, "latent_embeddings.pt")
 
-            embeddings, labels = prepare_training(encoder,
-                                                  dataset,
-                                                  num_examples=3000)
+            if FLAGS.reload_embeddings and os.path.exists(tmp):
+                embeddings, labels = torch.load(tmp)
+            else:
+                embeddings, labels = prepare_training(
+                    encoder=blender.encoder,
+                    post_encoder=blender.post_encoder,
+                    dataset=dataset,
+                    num_examples=FLAGS.num_examples,
+                    mode=FLAGS.label_mode)
+
+                torch.save((embeddings, labels), tmp)
 
             embeddings = embeddings / (FLAGS.latent_range)
             torch.set_grad_enabled(True)
             if zt_channels > 2:
                 project_model = train_autoencoder(embeddings,
-                                                  num_steps=50000,
-                                                  batch_size=8,
-                                                  lr=1e-3,
-                                                  device="cpu")
+                                                  num_steps=FLAGS.num_steps,
+                                                  batch_size=128,
+                                                  lr=1e-4,
+                                                  device="cpu",
+                                                  val_split=0.05,
+                                                  mode=FLAGS.ae_mode)
 
-                compressed_embeddings = project_model.encoder(
+                compressed_embeddings = project_model.encode(
                     torch.tensor(embeddings,
                                  dtype=torch.float32)).detach().numpy()
             else:
@@ -134,10 +256,10 @@ def main(argv):
             fig, legend_fig = generate_plot(compressed_embeddings,
                                             labels,
                                             use_blur=True,
-                                            bins=500,
-                                            sigma=12,
-                                            gamma=0.5,
-                                            brightness_scale=1.)
+                                            bins=100,
+                                            sigma=2,
+                                            gamma=1.,
+                                            brightness_scale=10.)
             torch.set_grad_enabled(False)
         except Exception as e:
             print("Could not load dataset for embedding plot.")
@@ -154,16 +276,24 @@ def main(argv):
 
             self.net = blender.net
             self.encoder = blender.encoder
-            self.encoder_time = blender.encoder_time
+            if blender.encoder_time is not None:
+                print("Using Encoder time")
+                self.encoder_time = blender.encoder_time
+                self.time_cond_ratio = gin.query_parameter(
+                    "utils.collate_fn.compress_tc")
+                print("Time cond ratio : ", self.time_cond_ratio)
+            else:
+                self.encoder_time = DummyIdentity()
+                self.time_cond_ratio = 1
             self.post_encoder = blender.post_encoder
 
             self.n_signal = n_signal
             self.n_signal_timbre = n_signal_timbre
-            self.chunk_size = FLAGS.chunk_size
+            self.chunk_size = model_chunk_size
             self.n_poly = FLAGS.n_poly
             self.zt_channels = zt_channels
             self.ae_latents = ae_latents
-            self.emb_model_timbre = torch.jit.load(FLAGS.emb_model_path).eval()
+            self.emb_model_timbre = torch.jit.load(emb_model_path).eval()
 
             self.drop_value = blender.drop_value
 
@@ -174,22 +304,17 @@ def main(argv):
             z = self.emb_model_timbre.encode(dummy)
             self.ae_ratio = 4 * 4096 // z.shape[-1]
 
-            self.sr = gin.query_parameter("%SR")
-            self.zt_buffer = self.n_signal_timbre * self.ae_ratio
-
             self.project_model = project_model
 
             ## ATTRIBUTES ##
-            self.register_attribute("nb_steps", 1)
-            self.register_attribute("guidance_timbre", 1.)
             self.register_attribute("guidance_structure", 1.)
+            self.register_attribute("nb_steps", 2)
 
             ## BUFFERS ##
+            self.register_buffer("_device_tracker", torch.zeros(1))
             self.register_buffer(
-                "previous_timbre",
-                torch.zeros(4, self.ae_latents, self.n_signal_timbre))
-
-            self.register_buffer("last_zsem", torch.zeros(4, self.zt_channels))
+                "t_values_cache",
+                torch.linspace(0, 1, self.nb_steps[0] + 1, device=self.device))
 
             ## METHODS ##
             input_labels = []
@@ -197,30 +322,10 @@ def main(argv):
                 input_labels.append("(signal) Input pitch " + str(i))
                 input_labels.append("(signal) Input velocity " + str(i))
 
-            # input_labels = [""
-            #     f"(signal) Input {l} {i}" for i in range(self.n_poly)
-            #     for l in ["pitch", "velocity"]
-            # ]
-
-            self.register_method(
-                "timbre",
-                in_channels=1,
-                in_ratio=1,
-                out_channels=self.zt_channels,
-                out_ratio=self.ae_ratio,
-                input_labels=[
-                    f"(signal) Input timbre",
-                ],
-                output_labels=[
-                    f"(signal) Output timbre {i}" for i in range(zt_channels)
-                ],
-                test_buffer_size=self.chunk_size * self.ae_ratio,
-            )
-
             self.register_method(
                 "generate",
                 in_channels=self.n_poly * 2 + zt_channels,
-                in_ratio=self.ae_ratio,
+                in_ratio=1,  #self.ae_ratio // self.time_cond_ratio,
                 out_channels=1,
                 out_ratio=1,
                 input_labels=input_labels +
@@ -232,7 +337,7 @@ def main(argv):
             self.register_method(
                 "diffuse",
                 in_channels=self.n_poly * 2 + zt_channels,
-                in_ratio=self.ae_ratio,
+                in_ratio=1,
                 out_channels=self.ae_latents,
                 out_ratio=self.ae_ratio,
                 input_labels=input_labels +
@@ -292,14 +397,9 @@ def main(argv):
                 test_buffer_size=2048,
             )
 
-        @torch.jit.export
-        def get_guidance_timbre(self) -> float:
-            return self.guidance_timbre[0]
-
-        @torch.jit.export
-        def set_guidance_timbre(self, guidance_timbre: float) -> int:
-            self.guidance_timbre = (guidance_timbre, )
-            return 0
+        @property
+        def device(self):
+            return self._device_tracker.device
 
         @torch.jit.export
         def get_guidance_structure(self) -> float:
@@ -317,85 +417,104 @@ def main(argv):
         @torch.jit.export
         def set_nb_steps(self, nb_steps: int) -> int:
             self.nb_steps = (nb_steps, )
+            self.t_values_cache = torch.linspace(0,
+                                                 1,
+                                                 nb_steps + 1,
+                                                 device=self.device)
             return 0
+
+        def make_pianoroll_from_buffer(self,
+                                       notes,
+                                       T_roll: int,
+                                       n_pitches: int = 128):
+            """
+            notes: [B, 2*n_poly, T_buffer]
+            even channels: pitch
+            odd channels: velocity
+            T_roll: number of piano roll frames
+            Returns: [B, n_pitches, T_roll] with velocity values in [0, 1]
+            """
+            B, C, T_buf = notes.shape
+            n_poly = C // 2
+            frame_len = T_buf // T_roll
+
+            # Split pitch / velocity
+            pitches = notes[:, 0::2, :]
+            velocities = notes[:, 1::2, :] / 127.0
+
+            # Trim to fit full frames
+            pitches = pitches[:, :, :frame_len * T_roll]
+            velocities = velocities[:, :, :frame_len * T_roll]
+
+            # Reshape into frames
+            pitches = pitches.view(B, n_poly, T_roll, frame_len)
+            velocities = velocities.view(B, n_poly, T_roll, frame_len)
+
+            # Initialize piano roll
+            piano_roll = torch.zeros(B, n_pitches, T_roll, device=self.device)
+
+            # For each batch, frame, and poly voice, scatter velocity where active
+            for b in range(B):
+                for t in range(T_roll):
+                    # Active mask for this frame (polyphony × frame_len)
+                    active_mask = velocities[b, :, t, :] > 0
+                    if not active_mask.any():
+                        continue
+                    # Flatten over polyphony/time and get pitch/velocity pairs
+                    v_active = velocities[b, :, t, :][active_mask]
+                    p_active = pitches[b, :, t, :][active_mask].long().clamp(
+                        0, n_pitches - 1)
+                    # Aggregate (max velocity if multiple voices on same pitch)
+                    piano_roll[
+                        b, p_active,
+                        t] = v_active  #torch.maximum(piano_roll[b, p_active, t],
+                    #v_active)
+            return piano_roll
 
         def model_forward(self, x: torch.Tensor, time: torch.Tensor,
                           cond: torch.Tensor, time_cond: torch.Tensor,
                           cache_index: int) -> torch.Tensor:
 
-            guidance_timbre = self.guidance_timbre[0]
-            guidance_structure = self.guidance_structure[0]
+            if self.guidance_structure[0] == 1.:
+                dx = self.net(x,
+                              time=time,
+                              cond=cond,
+                              time_cond=time_cond,
+                              cache_index=cache_index)
+                return dx
 
-            full_time = time.repeat(3, 1, 1)
-            full_x = x.repeat(3, 1, 1)
+            else:
+                dx = self.net(x.repeat(2, 1, 1),
+                              time=time.repeat(2, 1, 1),
+                              cond=cond.repeat(2, 1),
+                              time_cond=torch.cat([
+                                  time_cond,
+                                  self.drop_value * torch.ones_like(time_cond),
+                              ]),
+                              cache_index=cache_index)
 
-            full_cond = torch.cat([
-                cond,
-                cond,
-                self.drop_value * torch.ones_like(cond),
-            ])
+                dx_full, dx_none = torch.chunk(dx, 2, dim=0)
 
-            full_time_cond = torch.cat([
-                time_cond,
-                self.drop_value * torch.ones_like(time_cond),
-                self.drop_value * torch.ones_like(time_cond),
-            ])
+                dx = dx_none + self.guidance_structure[0] * (dx_full - dx_none)
 
-            dx = self.net(full_x,
-                          time=full_time,
-                          cond=full_cond,
-                          time_cond=full_time_cond,
-                          cache_index=cache_index)
-
-            dx_full, dx_cond, dx_none = torch.chunk(dx, 3, dim=0)
-
-            total_guidance = 0.5 * (guidance_structure + guidance_timbre)
-
-            guidance_cond_factor = guidance_structure / (max(
-                guidance_timbre, 0.1))
-
-            dx = dx_none + total_guidance * (dx_cond + guidance_cond_factor *
-                                             (dx_full - dx_cond) - dx_none)
-
-            return dx
+                return dx
 
         def sample(self, x_last: torch.Tensor, cond: torch.Tensor,
                    time_cond: torch.Tensor):
 
-            x = x_last
-            t = torch.linspace(0, 1, self.nb_steps[0] + 1)
             dt = 1 / self.nb_steps[0]
 
-            for i, t_value in enumerate(t[:-1]):
+            for i, t in enumerate(self.t_values_cache[:-1]):
+                t = t.repeat(x_last.shape[0])
 
-                dt = dt
+                x_last = x_last + dt * self.net(x_last,
+                                                time=t,
+                                                cond=cond,
+                                                cache_index=i,
+                                                time_cond=time_cond)
 
-                x = x + self.model_forward(x=x,
-                                           time=t_value.repeat(
-                                               x.shape[0], 1, x.shape[-1]),
-                                           cond=cond,
-                                           time_cond=time_cond,
-                                           cache_index=i) * dt
-
-                self.net.roll_cache(x.shape[-1], i)
-            return x
-
-        @torch.jit.export
-        def timbre(self, x) -> torch.Tensor:
-            x = self.emb_model_timbre.encode(x)
-
-            self.previous_timbre[:x.shape[0]] = torch.cat(
-                (self.previous_timbre[:x.shape[0]], x), -1)[..., x.shape[-1]:]
-
-            zsem = self.encoder.forward_stream(
-                self.previous_timbre[:x.shape[0]])
-
-            if self.post_encoder is not None:
-                zsem = self.post_encoder.forward_stream(zsem)
-
-            zsem = zsem.unsqueeze(-1).repeat((1, 1, x.shape[-1]))
-            zsem = zsem / self.latent_range
-            return zsem
+                self.net.roll_cache(x_last.shape[-1], i)
+            return x_last
 
         @torch.jit.export
         def diffuse(self, x: torch.Tensor) -> torch.Tensor:
@@ -407,21 +526,20 @@ def main(argv):
 
             # Get the notes
             notes = x[:, :2 * self.n_poly]
-            time_cond = torch.zeros((1, 128, x.shape[-1]))
 
-            for i in range(self.n_poly):
-                for j in range(x.shape[-1]):
-                    if notes[0, 2 * i + 1, j] > 0:
-                        time_cond[:, notes[:, 2 * i].long(),
-                                  j] = notes[:, 2 * i + 1, j] / 128
+            time_cond = self.make_pianoroll_from_buffer(
+                notes,
+                T_roll=self.time_cond_ratio * x.shape[-1] // self.ae_ratio)
 
             # Generate
-            x = torch.randn(n, self.ae_latents, x.shape[-1])
+            x = torch.randn(n,
+                            self.ae_latents,
+                            time_cond.shape[-1] // self.time_cond_ratio,
+                            device=self.device)
 
-            x = self.sample(x[:1], time_cond=time_cond[:1], cond=zsem[:1])
+            time_cond = self.encoder_time.forward_stream(time_cond)
 
-            if n > 1:
-                x = x.repeat(n, 1, 1)
+            x = self.sample(x, time_cond=time_cond, cond=zsem)
             return x
 
         @torch.jit.export
@@ -439,20 +557,23 @@ def main(argv):
         def map2latent(self, x: torch.Tensor) -> torch.Tensor:
             tdim = x.shape[-1]
             mapvec = x.mean(-1)
-            latents = self.project_model.decoder(mapvec)
+            latents = self.project_model.decode(mapvec)
             return latents.unsqueeze(-1).repeat((1, 1, tdim))
 
         @torch.jit.export
         def latent2map(self, x: torch.Tensor) -> torch.Tensor:
             tdim = x.shape[-1]
             latents = x.mean(-1)
-            map = self.project_model.encoder(latents)
+            map = self.project_model.encode(latents)
             return map.unsqueeze(-1).repeat((1, 1, tdim))
 
     ####
-    streamer = Streamer()
-    dummmy = torch.randn(1, FLAGS.n_poly * 2 + zt_channels, FLAGS.chunk_size)
+    streamer = Streamer().cpu()
+
+    dummmy = torch.randn(4, FLAGS.n_poly * 2 + zt_channels, 4096).cpu()
+
     out = streamer.diffuse(dummmy)
+
     out_name = os.path.join(folder,
                             "after.midi." + folder.split("/")[-1] + ".ts")
 

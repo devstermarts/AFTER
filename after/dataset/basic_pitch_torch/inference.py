@@ -49,11 +49,14 @@ def frame_with_pad(x: np.array, frame_length: int, hop_size: int) -> np.array:
     n_frames = int(np.ceil((x.shape[0] - frame_length) / hop_size)) + 1
     n_pads = (n_frames - 1) * hop_size + frame_length - x.shape[0]
     x = np.pad(x, (0, n_pads), mode="constant")
-    framed_audio = librosa.util.frame(x, frame_length=frame_length, hop_length=hop_size)
+    framed_audio = librosa.util.frame(x,
+                                      frame_length=frame_length,
+                                      hop_length=hop_size)
     return framed_audio
 
 
-def window_audio_file(audio_original: np.array, hop_size: int) -> Tuple[np.array, List[Dict[str, int]]]:
+def window_audio_file(audio_original: np.array,
+                      hop_size: int) -> Tuple[np.array, List[Dict[str, int]]]:
     """
     Pad appropriately an audio file, and return as
     windowed signal, with window length = AUDIO_N_SAMPLES
@@ -65,19 +68,16 @@ def window_audio_file(audio_original: np.array, hop_size: int) -> Tuple[np.array
 
     """
     audio_windowed = frame_with_pad(audio_original, AUDIO_N_SAMPLES, hop_size)
-    window_times = [
-        {
-            "start": t_start,
-            "end": t_start + (AUDIO_N_SAMPLES / AUDIO_SAMPLE_RATE),
-        }
-        for t_start in np.arange(audio_windowed.shape[0]) * hop_size / AUDIO_SAMPLE_RATE
-    ]
+    window_times = [{
+        "start": t_start,
+        "end": t_start + (AUDIO_N_SAMPLES / AUDIO_SAMPLE_RATE),
+    } for t_start in np.arange(audio_windowed.shape[0]) * hop_size /
+                    AUDIO_SAMPLE_RATE]
     return audio_windowed, window_times
 
 
-def get_audio_input(
-    audio, overlap_len: int, hop_size: int
-) -> Tuple[Tensor, List[Dict[str, int]], int]:
+def get_audio_input(audio, overlap_len: int,
+                    hop_size: int) -> Tuple[Tensor, List[Dict[str, int]], int]:
     """
     Read wave file (as mono), pad appropriately, and return as
     windowed signal, with window length = AUDIO_N_SAMPLES
@@ -90,18 +90,21 @@ def get_audio_input(
             length of original audio file, in frames, BEFORE padding.
 
     """
-    assert overlap_len % 2 == 0, "overlap_length must be even, got {}".format(overlap_len)
+    assert overlap_len % 2 == 0, "overlap_length must be even, got {}".format(
+        overlap_len)
 
     #audio_original, _ = librosa.load(str(audio_path), sr=AUDIO_SAMPLE_RATE, mono=True)
     audio_original = audio.numpy()
 
     original_length = audio_original.shape[0]
-    audio_original = np.concatenate([np.zeros((int(overlap_len / 2),), dtype=np.float32), audio_original])
+    audio_original = np.concatenate(
+        [np.zeros((int(overlap_len / 2), ), dtype=np.float32), audio_original])
     audio_windowed, window_times = window_audio_file(audio_original, hop_size)
     return audio_windowed, window_times, original_length
 
 
-def unwrap_output(output: Tensor, audio_original_length: int, n_overlapping_frames: int) -> np.array:
+def unwrap_output(output: Tensor, audio_original_length: int,
+                  n_overlapping_frames: int) -> np.array:
     """Unwrap batched model predictions to a single matrix.
 
     Args:
@@ -122,16 +125,21 @@ def unwrap_output(output: Tensor, audio_original_length: int, n_overlapping_fram
         raw_output = raw_output[:, n_olap:-n_olap, :]
 
     output_shape = raw_output.shape
-    n_output_frames_original = int(np.floor(audio_original_length * (ANNOTATIONS_FPS / AUDIO_SAMPLE_RATE)))
-    unwrapped_output = raw_output.reshape(output_shape[0] * output_shape[1], output_shape[2])
-    return unwrapped_output[:n_output_frames_original, :]  # trim to original audio length
+    n_output_frames_original = int(
+        np.floor(audio_original_length *
+                 (ANNOTATIONS_FPS / AUDIO_SAMPLE_RATE)))
+    unwrapped_output = raw_output.reshape(output_shape[0] * output_shape[1],
+                                          output_shape[2])
+    return unwrapped_output[:
+                            n_output_frames_original, :]  # trim to original audio length
 
 
 def run_inference(
     audio,
     model: nn.Module,
     debug_file: Optional[pathlib.Path] = None,
-    device = "cpu",
+    device="cpu",
+    batch_size: int = 64,
 ) -> Dict[str, np.array]:
     """Run the model on the input audio path.
 
@@ -139,6 +147,7 @@ def run_inference(
         audio_path: The audio to run inference on.
         model: A loaded keras model to run inference with.
         debug_file: An optional path to output debug data to. Useful for testing/verification.
+        batch_size: Number of windows to process at once. Reduce if OOM on large files.
 
     Returns:
        A dictionary with the notes, onsets and contours from model inference.
@@ -148,13 +157,27 @@ def run_inference(
     overlap_len = n_overlapping_frames * FFT_HOP
     hop_size = AUDIO_N_SAMPLES - overlap_len
 
-    audio_windowed, _, audio_original_length = get_audio_input(audio, overlap_len, hop_size)
-    audio_windowed = torch.from_numpy(audio_windowed).T
-        
-    audio_windowed = audio_windowed.to(device)
+    audio_windowed, _, audio_original_length = get_audio_input(
+        audio, overlap_len, hop_size)
+    audio_windowed = torch.from_numpy(audio_windowed).T  # (n_windows, AUDIO_N_SAMPLES)
 
-    output = model(audio_windowed)
-    unwrapped_output = {k: unwrap_output(output[k], audio_original_length, n_overlapping_frames) for k in output}
+    n_windows = audio_windowed.shape[0]
+    output_batches: Dict[str, List[np.ndarray]] = {}
+
+    for start in range(0, n_windows, batch_size):
+        batch = audio_windowed[start:start + batch_size].to(device)
+        batch_out = model(batch)
+        for k, v in batch_out.items():
+            output_batches.setdefault(k, []).append(v.cpu())
+
+    # Concatenate along the window axis (dim 0) before unwrapping
+    output = {k: torch.cat(vs, dim=0) for k, vs in output_batches.items()}
+
+    unwrapped_output = {
+        k: unwrap_output(output[k], audio_original_length,
+                         n_overlapping_frames)
+        for k in output
+    }
 
     if debug_file:
         with open(debug_file, "w") as f:
@@ -164,7 +187,9 @@ def run_inference(
                     "audio_original_length": audio_original_length,
                     "hop_size_samples": hop_size,
                     "overlap_length_samples": overlap_len,
-                    "unwrapped_output": {k: v.tolist() for k, v in unwrapped_output.items()},
+                    "unwrapped_output":
+                    {k: v.tolist()
+                     for k, v in unwrapped_output.items()},
                 },
                 f,
             )
@@ -260,9 +285,15 @@ def save_note_events(
 
     with open(save_path, "w") as fhandle:
         writer = csv.writer(fhandle, delimiter=",")
-        writer.writerow(["start_time_s", "end_time_s", "pitch_midi", "velocity", "pitch_bend"])
+        writer.writerow([
+            "start_time_s", "end_time_s", "pitch_midi", "velocity",
+            "pitch_bend"
+        ])
         for start_time, end_time, note_number, amplitude, pitch_bend in note_events:
-            row = [start_time, end_time, note_number, int(np.round(127 * amplitude))]
+            row = [
+                start_time, end_time, note_number,
+                int(np.round(127 * amplitude))
+            ]
             if pitch_bend:
                 row.extend(pitch_bend)
             writer.writerow(row)
@@ -270,9 +301,10 @@ def save_note_events(
 
 def predict(
     audio,
-    model = None, 
-    device = None,
-    model_path: Union[pathlib.Path, str] = "assets/basic_pitch_pytorch_icassp_2022.pth",
+    model=None,
+    device=None,
+    model_path: Union[pathlib.Path,
+                      str] = "assets/basic_pitch_pytorch_icassp_2022.pth",
     onset_threshold: float = 0.5,
     frame_threshold: float = 0.3,
     minimum_note_length: float = 127.70,
@@ -282,7 +314,9 @@ def predict(
     melodia_trick: bool = True,
     debug_file: Optional[pathlib.Path] = None,
     midi_tempo: float = 120,
-) -> Tuple[Dict[str, np.array], pretty_midi.PrettyMIDI, List[Tuple[float, float, int, float, Optional[List[int]]]],]:
+    batch_size: int = 64,
+) -> Tuple[Dict[str, np.array], pretty_midi.PrettyMIDI, List[Tuple[
+        float, float, int, float, Optional[List[int]]]], ]:
     """Run a single prediction.
 
     Args:
@@ -299,21 +333,18 @@ def predict(
     Returns:
         The model output, midi data and note events from a single prediction
     """
-    
-    
+
     if model is None:
         model = BasicPitchTorch()
         model.load_state_dict(torch.load(str(model_path)))
-        model.eval() 
+        model.eval()
         if device is not None:
             model.to(device)
 
+    model_output = run_inference(audio, model, debug_file, device=device, batch_size=batch_size)
 
-    model_output = run_inference(audio, model, debug_file, device= device)
-    
-    
-    
-    min_note_len = int(np.round(minimum_note_length / 1000 * (AUDIO_SAMPLE_RATE / FFT_HOP)))
+    min_note_len = int(
+        np.round(minimum_note_length / 1000 * (AUDIO_SAMPLE_RATE / FFT_HOP)))
     midi_data, note_events = model_output_to_notes(
         model_output,
         onset_thresh=onset_threshold,
@@ -333,19 +364,20 @@ def predict(
             json.dump(
                 {
                     **debug_data,
-                    "min_note_length": min_note_len,
-                    "onset_thresh": onset_threshold,
-                    "frame_thresh": frame_threshold,
-                    "estimated_notes": [
-                        (
-                            float(start_time),
-                            float(end_time),
-                            int(pitch),
-                            float(amplitude),
-                            [int(b) for b in pitch_bends] if pitch_bends else None,
-                        )
-                        for start_time, end_time, pitch, amplitude, pitch_bends in note_events
-                    ],
+                    "min_note_length":
+                    min_note_len,
+                    "onset_thresh":
+                    onset_threshold,
+                    "frame_thresh":
+                    frame_threshold,
+                    "estimated_notes": [(
+                        float(start_time),
+                        float(end_time),
+                        int(pitch),
+                        float(amplitude),
+                        [int(b) for b in pitch_bends] if pitch_bends else None,
+                    ) for start_time, end_time, pitch, amplitude, pitch_bends
+                                        in note_events],
                 },
                 f,
             )

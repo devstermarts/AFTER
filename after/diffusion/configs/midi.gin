@@ -1,30 +1,34 @@
 from __gin__ import dynamic_registration
 
-
 import after
 from after import diffusion
-from cached_conv import convs
-
-
 
 IN_SIZE = None
 N_SIGNAL = None
 
-ZS_CHANNELS = 128
+ZS_CHANNELS = 64
 ZT_CHANNELS = 6
+
 SR = 44100
 STRUCTURE_TYPE = "midi"
-PHASE_1_STEP = 1
+PHASE_1_STEP = 100000
 MAX_STEPS = 1000000
 
-LOCAL_ATTENTION_SIZE = 16
-ATTENTION_CHUNK_SIZE = 4
+LOCAL_ATTENTION_SIZE = 8
+ATTENTION_CHUNK_SIZE = 1
 
 # Data
+diffusion.utils.get_datasets:
+    db_list = None
+    emb_model_path = None
+
 diffusion.utils.collate_fn:
     n_signal = %N_SIGNAL
     structure_type = %STRUCTURE_TYPE
+    compress_tc = 4
+    shift_tc = 1
 
+### ARCHITECTURE ### 
 encoder/diffusion.networks.ecapa_encoder.ECAPATDNN:
     attention_channels = 128
     channels = [512, 512, 512, 1024]
@@ -41,12 +45,18 @@ encoder/diffusion.networks.ecapa_encoder.ECAPATDNN:
     use_tanh = False
     regularisation = "ac"
 
-encoder/convs.get_padding.mode = 'causal'
+encoder_time/diffusion.networks.Encoder1D:
+    in_size = 128
+    channels = [128, 128, 128, %ZS_CHANNELS]
+    ratios = [2, 2, 1]
+    ac_regularisation = True
+    norm_type = "batch_norm"
+    causal=True
 
 diffusion.networks.transformerv2.DenoiserV2:
     n_channels = %IN_SIZE
     seq_len = %N_SIGNAL   
-    embed_dim = 512
+    embed_dim = 384
     cond_dim = %ZT_CHANNELS
     noise_embed_dims = 64
     n_layers = 6
@@ -54,7 +64,6 @@ diffusion.networks.transformerv2.DenoiserV2:
     dropout  = 0.1
     causal = True
     tcond_dim = %ZS_CHANNELS
-    pos_emb_type = "rotary"
     local_attention_size = %LOCAL_ATTENTION_SIZE
     attention_chunk_size = %ATTENTION_CHUNK_SIZE
 
@@ -62,43 +71,33 @@ diffusion.networks.transformerv2.DenoiserV2:
 diffusion.model.Base:
     sr = %SR
     net= @diffusion.networks.transformerv2.DenoiserV2()
-    encoder = @encoder/diffusion.networks.ecapa_encoder.ECAPATDNN() 
-    encoder_time = None
-    classifier = None
+    encoder = @encoder/diffusion.networks.ecapa_encoder.ECAPATDNN()
+    encoder_time = @encoder_time/diffusion.networks.Encoder1D()    
     time_transform = None
     drop_value = -4.
-    drop_rate = 0.2
-    sigma_data = 1.
+    drop_rate = 0.15
 
  
 diffusion.model.Base.fit: 
     max_steps = %MAX_STEPS
-    train_encoder = True
 
     ## Adversarial
     timbre_warmup = %PHASE_1_STEP
-    stop_training_encoder_step = %MAX_STEPS
     adversarial_weight = 0.
+    adversarial_warmup = 1
+
+    drop_targets = [0]
 
     # Noise augmentation to smooth the latent space
-    zsem_noise_aug = 0.05
-    time_cond_noise_aug = 0.
+    timbre_noise_aug = 0.05
+    structure_noise_aug = 0.
 
     ## Encoder regularisation
-    regularisation_weight = 1
-    regularisation_warmup = 1
-    
-    ## Cycle loss
-    cycle_consistency = False
-
-    drop_targets = [1]
-
-    ### DATA ###
-    shuffle_zsem = [4,8]
+    regularisation_weight_cond = 1.
+    regularisation_weight_time_cond = 1.
 
     ## Log ## 
     steps_valid = 10000
     steps_save = 50000
-
-    use_ema = True
+    
     lr = 1e-4

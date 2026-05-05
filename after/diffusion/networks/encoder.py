@@ -31,7 +31,10 @@ class V2ConvBlock1D(nn.Module):
                  kernel_size,
                  act=nn.SiLU,
                  res=True,
-                 cumulative_delay=0):
+                 cumulative_delay=0,
+                 norm_type="batch_norm",
+                 num_groups=8,
+                 causal=False):
         super().__init__()
         self.res = res
 
@@ -39,19 +42,27 @@ class V2ConvBlock1D(nn.Module):
             cc.Conv1d(in_c,
                       out_c,
                       kernel_size=kernel_size,
-                      padding=cc.get_padding(kernel_size)))
+                      padding=cc.get_padding(kernel_size, mode="causal" if causal else "centered")))
 
         conv2 = normalization(
             cc.Conv1d(out_c,
                       out_c,
                       kernel_size=kernel_size,
-                      padding=cc.get_padding(kernel_size),
+                      padding=cc.get_padding(kernel_size, mode="causal" if causal else "centered"),
                       cumulative_delay=conv1.cumulative_delay))
 
-        self.gn1 = nn.BatchNorm1d(in_c)
-        self.gn2 = nn.BatchNorm1d(out_c)
+        if norm_type == "batch_norm":
+            self.gn1 = nn.BatchNorm1d(in_c)
+            self.gn2 = nn.BatchNorm1d(out_c)
+        elif norm_type == "group_norm":
+            self.gn1 = nn.GroupNorm(
+                min(in_c, min(num_groups, max(1, in_c // 4))), in_c)
+            self.gn2 = nn.GroupNorm(
+                min(out_c, min(num_groups, max(1, out_c // 4))), out_c)
+        else:
+            self.gn1 = self.gn2 = nn.Identity()
         act = act
-        self.dp = nn.Dropout(p=0.15)
+        self.dp = nn.Dropout(p=0.1)
 
         #net = [self.gn1, act(), conv1, self.gn2, act(), self.dp, conv2]
         net = [self.gn1, act(), conv1, self.gn2, act(), self.dp, conv2]
@@ -80,12 +91,16 @@ class V2EncoderBlock1D(nn.Module):
                  out_c,
                  kernel_size,
                  ratio,
-                 cumulative_delay=0):
+                 cumulative_delay=0,
+                 norm_type="batch_norm",
+                 causal=False):
         super().__init__()
         conv = V2ConvBlock1D(in_c + tot_cond_channels,
                              in_c,
                              kernel_size,
-                             cumulative_delay=cumulative_delay)
+                             cumulative_delay=cumulative_delay,
+                             norm_type=norm_type,
+                             causal=causal)
 
         if ratio != 1:
             pool = normalization(
@@ -93,7 +108,7 @@ class V2EncoderBlock1D(nn.Module):
                           out_c,
                           kernel_size=2 * ratio,
                           stride=ratio,
-                          padding=cc.get_padding(2 * ratio, ratio),
+                          padding=cc.get_padding(2 * ratio, ratio, mode="causal" if causal else "centered"),
                           cumulative_delay=conv.cumulative_delay))
         else:
             pool = normalization(
@@ -129,7 +144,9 @@ class Encoder1D(nn.Module):
                  spherical_normalization=False,
                  vae_regularisation=False,
                  ac_regularisation=False,
-                 wassertstein_regularisation=False):
+                 wassertstein_regularisation=False,
+                 norm_type="batch_norm",
+                 causal=True):
         super().__init__()
 
         self.use_tanh = use_tanh
@@ -173,7 +190,9 @@ class Encoder1D(nn.Module):
                              c_channels,
                              channels[0],
                              kernel_size,
-                             ratio=ratios[0]))
+                             ratio=ratios[0],
+                             norm_type=norm_type, 
+                             causal=causal))
 
         for i in range(1, n):
             net.append(
@@ -182,13 +201,17 @@ class Encoder1D(nn.Module):
                                  channels[i],
                                  kernel_size,
                                  ratios[i],
-                                 cumulative_delay=net[-1].cumulative_delay))
+                                 cumulative_delay=net[-1].cumulative_delay,
+                                 norm_type=norm_type, 
+                                 causal=causal))
 
         net.append(
             V2ConvBlock1D(channels[-1] + c_channels,
                           channels[-1],
                           kernel_size,
-                          cumulative_delay=net[-1].cumulative_delay))
+                          cumulative_delay=net[-1].cumulative_delay,
+                          norm_type=norm_type, 
+                          causal=causal))
 
         self.net = cc.CachedSequential(*net)
 

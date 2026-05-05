@@ -1,0 +1,141 @@
+from __gin__ import dynamic_registration
+
+import after
+from after import diffusion
+from after import encoder_ssl
+
+IN_SIZE = None
+N_SIGNAL = None
+
+ZS_CHANNELS = 64
+ZT_CHANNELS_FULL = 64
+ZT_CHANNELS = 6
+
+SR = 44100
+STRUCTURE_TYPE = "midi"
+SSL_STEPS = 50000
+MAX_STEPS = 1000000
+SHUFFLE = None
+
+LOCAL_ATTENTION_SIZE = 8
+ATTENTION_CHUNK_SIZE = 1
+
+# Data
+diffusion.utils.get_datasets:
+    db_list = None
+    emb_model_path = None
+
+diffusion.utils.collate_fn:
+    n_signal = %N_SIGNAL
+    structure_type = %STRUCTURE_TYPE
+    compress_tc = 4
+    shift_tc = 1
+
+### ARCHITECTURE ### 
+encoder/diffusion.networks.ecapa_encoder.ECAPATDNN:
+    channels = [512, 512, 512, 1024, 2048]
+    dilations = [1, 1, 1, 1, 1 ]
+    global_context = True
+    groups = [1, 1, 1, 1, 1]
+    in_size = %IN_SIZE
+    kernel_sizes = [3, 3, 3, 3, 3]
+    out_dim = %ZT_CHANNELS_FULL
+    pooling = True
+    res2net_scale = 8
+    se_channels = 256
+    attention_channels = 256
+    spherical_normalisation = True
+    use_tanh = False
+    regularisation = "none"
+
+
+diffusion.networks.LinearEncoder:
+    in_size=64
+    channels=[512, 1024, 1024, 256, %ZT_CHANNELS]
+    drop_out=0.15
+    use_tanh=False
+    regularisation="vae"
+
+
+encoder_time/diffusion.networks.Encoder1D:
+    in_size = 128
+    channels = [128, 128, 128, %ZS_CHANNELS]
+    ratios = [2, 2, 1]
+    ac_regularisation = True
+    norm_type = "batch_norm"
+    causal=True
+
+classifier/diffusion.networks.Encoder1D:
+    in_size = %ZS_CHANNELS
+    channels = [64, 64, 64, 64, %ZT_CHANNELS_FULL]
+    ratios = [2, 2, 2, 1, 1]
+    average_out = True
+    norm_type = "batch_norm"
+
+diffusion.networks.transformerv2.DenoiserV2:
+    n_channels = %IN_SIZE
+    seq_len = %N_SIGNAL   
+    embed_dim = 384
+    cond_dim = %ZT_CHANNELS
+    noise_embed_dims = 64
+    n_layers = 6
+    mlp_multiplier = 3
+    dropout  = 0.1
+    causal = True
+    tcond_dim = %ZS_CHANNELS
+    local_attention_size = %LOCAL_ATTENTION_SIZE
+    attention_chunk_size = %ATTENTION_CHUNK_SIZE
+
+
+diffusion.model.Base:
+    sr = %SR
+    net= @diffusion.networks.transformerv2.DenoiserV2()
+    encoder = @encoder/diffusion.networks.ecapa_encoder.ECAPATDNN()
+    encoder_time = @encoder_time/diffusion.networks.Encoder1D()    
+    post_encoder = @diffusion.networks.LinearEncoder()
+    time_transform = None
+    drop_value = -4.
+    drop_rate = 0.15
+
+ 
+diffusion.model.Base.fit: 
+    max_steps = %MAX_STEPS
+
+    ## Adversarial
+    timbre_warmup = %SSL_STEPS
+    adversarial_weight = 0.
+    adversarial_warmup = 1
+
+    drop_targets = [0]
+
+    # Noise augmentation to smooth the latent space
+    timbre_noise_aug = 0.
+    structure_noise_aug = 0.
+
+    ## Encoder regularisation
+    regularisation_weight_cond = 0.0002
+    regularisation_weight_time_cond = 1
+
+
+    ## Log ## 
+    steps_valid = 10000
+    steps_save = 50000
+    lr = 1e-4
+
+
+# SIM DINO TRAINING 
+encoder_ssl.model.SimDino: 
+    encoder = @encoder/diffusion.networks.ecapa_encoder.ECAPATDNN
+    model_start_ema = 0.99
+    model_end_ema = 1.0
+    koleo_weight = .1 #1.
+    reg_weight = 1.
+    cosine_space = True
+    ac_regularisation = False
+
+encoder_ssl.model.Base.fit:
+    lr = 1e-4
+    steps_display = 200
+    steps_valid = 5000
+    steps_save = 25000
+    max_steps = %SSL_STEPS
