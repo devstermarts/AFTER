@@ -101,11 +101,9 @@ class Base(nn.Module):
         params = list(self.net.parameters())
 
         if self.encoder is not None and self.train_encoder:
-            print("training encoder")
             params += list(self.encoder.parameters())
 
         if self.encoder_time is not None and self.train_encoder_time:
-            print("training encoder_time")
             params += list(self.encoder_time.parameters())
 
         if self.post_encoder is not None:

@@ -50,7 +50,7 @@ flags.DEFINE_string(
     "augmentation_keys", "detect",
     "Where to find the augmentation keys - detect from dataset, config or none"
 )
-flags.DEFINE_bool("use_cache", False, "Whether to cache the dataset.")
+flags.DEFINE_bool("use_cache", True, "Whether to cache the dataset.")
 flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 flags.DEFINE_float("adv", None, "Adversarial strengh - overides config if set")
 flags.DEFINE_bool("use_validation", True, "Use a train/validation split")
@@ -132,8 +132,7 @@ def main(argv):
           " - emb size : ", ae_emb_size)
 
     with gin.unlock_config():
-        gin.bind_parameter("diffusion.utils.collate_fn.ae_ratio",
-                           ae_ratio)
+        gin.bind_parameter("diffusion.utils.collate_fn.ae_ratio", ae_ratio)
 
         gin.bind_parameter("%IN_SIZE", ae_emb_size)
 
@@ -156,8 +155,7 @@ def main(argv):
                                ae_ratio)
             gin.bind_parameter(
                 "diffusion.utils.get_datasets.compress_tc",
-                gin.query_parameter(
-                    "diffusion.utils.collate_fn.compress_tc"))
+                gin.query_parameter("diffusion.utils.collate_fn.compress_tc"))
             gin.bind_parameter("diffusion.utils.get_datasets.sr",
                                gin.query_parameter("%SR"))
 
@@ -271,7 +269,7 @@ def main(argv):
             valid_loader = torch.utils.data.DataLoader(
                 valset,
                 batch_size=FLAGS.batch_size_ssl,
-                shuffle=True,
+                shuffle=False,
                 num_workers=FLAGS.num_workers,
                 drop_last=True,
                 collate_fn=collate_fn_simdino,
