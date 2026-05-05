@@ -422,10 +422,10 @@ class Trainer(nn.Module):
                     tepoch.set_postfix(loss=all_losses_sum["total_loss"] /
                                        steps_display)
                     for k in all_losses_sum:
+                        if all_losses_count[k] == 0:
+                            continue
                         logger.add_scalar('Loss/' + k,
-                                          all_losses_sum[k] /
-                                          (1 if all_losses_count[k] == 0 else
-                                           all_losses_count[k]),
+                                          all_losses_sum[k] / all_losses_count[k],
                                           global_step=self.step)
                         all_losses_sum[k] = 0.
                         all_losses_count[k] = 0
