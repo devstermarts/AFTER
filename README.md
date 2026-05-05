@@ -12,7 +12,29 @@ If you want to share / discuss / ask things about AFTER and other research from 
 
 You can find pretrained models and max patches for realtime inference in the last section of this page.
 
-### Installation
+
+## Changelog
+
+### After v2
+
+This release marks significant update to the AFTER architecture and training pipeline. 
+**Checkpoints from v1 are not compatible with v2.** To use v1 models, see [Restoring v1](#restoring-v1) below.
+
+- New spectral autoencoder (STFT-based, 2D convolutions) replacing the 1D waveform codec
+- Multi-GPU support for autoencoder training
+- Self-supervised learning of timbral features (`--config audio_simdino` and `--config midi_simdino`)
+- Processing pipeline updated with dedicated timbre and structure augmentations
+- Export pipeline improved with automatic generation of maps for m4l device
+- MPS support for Apple Silicon (`--device mps`)
+- Smoke test runner for quick pipeline validation (`smoke/run.py`)
+- Training guide available [here](docs/training_guide.md).
+
+### After v1
+
+To use the original After v1 codebase, check out the `v1` branch after cloning.
+
+
+## Installation
 
 After can be installed in python 3.12 environnement by cloning this repository :
 
