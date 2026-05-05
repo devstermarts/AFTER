@@ -159,7 +159,8 @@ def run_inference(
 
     audio_windowed, _, audio_original_length = get_audio_input(
         audio, overlap_len, hop_size)
-    audio_windowed = torch.from_numpy(audio_windowed).T  # (n_windows, AUDIO_N_SAMPLES)
+    audio_windowed = torch.from_numpy(
+        audio_windowed.T.copy())  # (n_windows, AUDIO_N_SAMPLES)
 
     n_windows = audio_windowed.shape[0]
     output_batches: Dict[str, List[np.ndarray]] = {}

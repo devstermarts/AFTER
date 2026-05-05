@@ -17,6 +17,7 @@ resampy
 
 # MIDI / music
 pretty-midi
+mir-eval
 
 # Data / storage
 numpy==1.26
@@ -42,4 +43,4 @@ packaging
 # Private 
 # soxr
 # pytorch-lightning
-# mir-eval
+

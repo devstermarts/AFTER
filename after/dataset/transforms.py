@@ -148,7 +148,7 @@ class AudioAugment(BaseTransform):
         return self._apply_transforms(audio)
 
     def _crossfade(self, chunk_a, chunk_b, fade_len):
-        fade_in = np.linspace(0, 1, fade_len)
+        fade_in = np.linspace(0, 1, fade_len, dtype=np.float32)
         fade_out = 1 - fade_in
         crossfaded = chunk_a[..., -fade_len:] * fade_out + chunk_b[
             ..., :fade_len] * fade_in
@@ -400,5 +400,4 @@ class BasicPitchPytorch(BaseTransform):
                                       batch_size=self.batch_size,
                                       **params_bp)
             return midi_data
-
 

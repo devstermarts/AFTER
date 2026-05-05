@@ -153,6 +153,7 @@ def get_midi_chunk(midi_data, chunk_idx, num_signal, sr):
         for n in inst.notes:
             n.start = max(0.0, n.start - tstart)
             n.end = min(n.end - tstart, length)
+        inst.pitch_bends = []
     return midi_out
 
 
@@ -218,12 +219,28 @@ def _run_timbre_augment(chunk):
     return _TIMBRE_AUG(chunk.copy())
 
 
+def print_midi_size_stats(midi):
+    midi_bytes = pickle.dumps(midi)
+    n_notes = sum(len(inst.notes) for inst in midi.instruments)
+    n_bends = sum(len(inst.pitch_bends) for inst in midi.instruments)
+    n_cc = sum(len(inst.control_changes) for inst in midi.instruments)
+
+    print(
+        "midi bytes", len(midi_bytes),
+        "notes", n_notes,
+        "pitch_bends", n_bends,
+        "control_changes", n_cc,
+        "bytes_per_note", len(midi_bytes) / max(n_notes, 1),
+    )
+
+
 def flush_chunk_batch(entries, env, cur_index, device, emb_model, z_length,
                       desc_model, augment_pool):
     if not entries:
         return cur_index
 
     chunks = [entry["chunk"] for entry in entries]
+    
     latents = base_descriptors = None
     structure_results = []
     timbre_latents = []
@@ -282,7 +299,9 @@ def flush_chunk_batch(entries, env, cur_index, device, emb_model, z_length,
                          result["latents"][item_idx],
                          dtype=np.float32)
 
+            
             aug_midi = result["midis"][item_idx]
+            
             if aug_midi is not None:
                 ae.put_buffer(f"midi_structure_aug_{aug_idx}",
                               pickle.dumps(aug_midi),

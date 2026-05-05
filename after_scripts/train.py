@@ -26,7 +26,7 @@ flags.DEFINE_integer("gpu", 0, "GPU ID to use (legacy; --device takes precedence
 flags.DEFINE_string("device", None,
                     "Torch device: 'cpu', 'cuda', 'cuda:N', 'mps', or 'auto'. "
                     "Overrides --gpu when set.")
-flags.DEFINE_multi_string("config", [], "List of config files.")
+flags.DEFINE_multi_string("config", None, "Config to use - audio_simdino and midi_simdino are default", required=True)
 
 # Training
 flags.DEFINE_integer("batch_size", 32, "Batch size.")
@@ -54,7 +54,7 @@ flags.DEFINE_string(
     "augmentation_keys", "detect",
     "Where to find the augmentation keys - detect from dataset, config or none"
 )
-flags.DEFINE_bool("use_cache", True, "Whether to cache the dataset.")
+flags.DEFINE_bool("use_cache", False, "Whether to cache the dataset.")
 flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 flags.DEFINE_float("adv", None, "Adversarial strengh - overides config if set")
 flags.DEFINE_bool("use_validation", True, "Use a train/validation split")
@@ -72,6 +72,29 @@ def add_gin_extension(config_name: str) -> str:
     if config_name[-4:] != '.gin':
         config_name += '.gin'
     return config_name
+
+
+def validate_diffusion_signal_length(db_paths, n_signal):
+    """Fail early if the requested latent crop is longer than stored DB chunks."""
+    too_short = []
+    for path in db_paths:
+        dataset = SimpleDataset(path=path, keys=["z"])
+        if len(dataset) == 0:
+            continue
+
+        z_length = dataset[0]["z"].shape[-1]
+        if n_signal > z_length:
+            too_short.append((path, z_length))
+
+    if too_short:
+        details = "\n".join(
+            f"  {path}: stored z length={z_length}, requested n_signal={n_signal}"
+            for path, z_length in too_short)
+        raise ValueError(
+            "Diffusion n_signal is larger than the latent chunks saved in the DB.\n"
+            f"{details}\n"
+            "Use a smaller --n_signal/%N_SIGNAL or rebuild the DB with larger chunks."
+        )
 
 
 def main(argv):
@@ -166,6 +189,8 @@ def main(argv):
 
             gin.bind_parameter("diffusion.utils.collate_fn.precomp_pr",
                                FLAGS.use_cache)
+
+    validate_diffusion_signal_length(db_paths, gin.query_parameter("%N_SIGNAL"))
 
     blender = RectifiedFlow(device=device, emb_model=emb_model)
 
