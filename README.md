@@ -118,7 +118,7 @@ CUDA_VISIBLE_DEVICES=0,1,2 torchrun --nproc_per_node=3  after_scripts/train_auto
 | `--db_path` | `[]` | LMDB dataset path(s) — repeatable |
 | `--db_folder` | `None` | Folder whose sub-directories are each an LMDB dataset |
 | `--freqs` | `None` | Sampling frequencies for weighted multi-dataset sampling |
-| `--save_dir` | `autoencoder_runs` | Path to save the runs |
+| `--out_path` | `autoencoder_runs` | Output path for logs and checkpoints |
 | `--stereo` | `False` | Train a stereo model |
 | `--restart` | `None` | Resume from this checkpoint step |
 | `--gpu` | `0` | CUDA GPU ID; `-1` for CPU |

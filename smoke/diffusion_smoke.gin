@@ -1,6 +1,6 @@
 from __gin__ import dynamic_registration
 
-include 'tiny.gin'
+include 'audio.gin'
 
 from after import diffusion
 

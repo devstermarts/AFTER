@@ -17,10 +17,7 @@ FLAGS = flags.FLAGS
 cc.use_cached_conv(False)
 
 flags.DEFINE_string("name", "test", "Name of the model")
-flags.DEFINE_string("out_path", None,
-                    "Output path. Preferred over --save_dir if set.")
-flags.DEFINE_string("save_dir", "autoencoder_runs",
-                    "Log and checkpoint saving directory (legacy alias).")
+flags.DEFINE_string("out_path", "autoencoder_runs", "Output path for logs and checkpoints.")
 flags.DEFINE_multi_string(
     "db_path", [], "Database path. Use multiple for combined datasets.")
 flags.DEFINE_string(
@@ -49,10 +46,6 @@ flags.DEFINE_multi_string("filter_include", [],
                           "Glob patterns to include in dataset.")
 flags.DEFINE_multi_string("filter_exclude", [],
                           "Glob patterns to exclude from dataset.")
-flags.DEFINE_string(
-    "gpus", "", "Comma-separated GPU IDs for data parallel. Empty uses --gpu.")
-
-
 def add_gin_extension(config_name: str) -> str:
     if config_name[-4:] != '.gin':
         config_name += '.gin'
@@ -61,7 +54,7 @@ def add_gin_extension(config_name: str) -> str:
 
 def main(argv):
     model_name = FLAGS.name
-    output_root = FLAGS.save_dir
+    output_root = FLAGS.out_path
     batch_size = FLAGS.batch_size
     num_signal = FLAGS.n_signal
     step_restart = FLAGS.restart
@@ -84,6 +77,7 @@ def main(argv):
         device_ids = [local_rank]
     else:
         device = resolve_device(FLAGS.device, FLAGS.gpu)
+        device_ids=None
 
     ## GIN CONFIG
     if FLAGS.restart is not None:

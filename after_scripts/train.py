@@ -46,7 +46,7 @@ flags.DEFINE_string(
 flags.DEFINE_multi_float("freqs", None,
                          "Sampling frequencies for multiple datasets.")
 
-flags.DEFINE_string("save_dir", "./after_runs", "Output path.")
+flags.DEFINE_string("out_path", "./after_runs", "Output path for logs and checkpoints.")
 flags.DEFINE_string("emb_model_path", None, "Path to the embedding model.")
 
 # Puts the dataset in cache prior to training for slow hard drives
@@ -84,10 +84,40 @@ def main(argv):
     )
 
     if FLAGS.restart is not None:
-        config_path = os.path.join(FLAGS.save_dir, FLAGS.name, "config.gin")
+        config_path = os.path.join(FLAGS.out_path, FLAGS.name, "config.gin")
         with gin.unlock_config():
             gin.parse_config_files_and_bindings([config_path], [])
 
+    # Resolve DB paths: merge --db_path and --db_folder sub-directories
+    db_paths = list(FLAGS.db_path)
+    if FLAGS.db_folder is not None:
+        folder = pathlib.Path(FLAGS.db_folder)
+        subdirs = sorted([p for p in folder.iterdir() if p.is_dir()])
+        if not subdirs:
+            raise ValueError(
+                f"--db_folder '{FLAGS.db_folder}' contains no sub-directories."
+            )
+        db_paths += [str(p) for p in subdirs]
+
+    if not db_paths:
+        raise ValueError("No dataset provided. Use --db_path or --db_folder.")
+
+    # Dataset summary
+    print("\n=== Datasets ===")
+    total_entries = 0
+    for p in db_paths:
+        try:
+            n = len(SimpleDataset(path=p))
+        except Exception:
+            n = -1
+        label = f"  {n:>7,} entries" if n >= 0 else "  (could not read)"
+        print(f"  {pathlib.Path(p).name:<40} {label}  [{p}]")
+        if n > 0:
+            total_entries += n
+    print(f"  {'TOTAL':<40}   {total_entries:>7,} entries")
+    print("================\n")
+    
+    
     device = resolve_device(FLAGS.device, FLAGS.gpu)
 
     ######### BUILD MODEL #########
@@ -185,7 +215,7 @@ def main(argv):
         pass
 
     ######### SAVE CONFIG #########
-    model_dir = os.path.join(FLAGS.save_dir, FLAGS.name)
+    model_dir = os.path.join(FLAGS.out_path, FLAGS.name)
     os.makedirs(model_dir, exist_ok=True)
 
     ######### PRINT NUMBER OF PARAMETERS #########

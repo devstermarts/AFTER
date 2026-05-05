@@ -40,6 +40,6 @@ packaging
 
 
 # Private 
-soxr
-pytorch-lightning
-mir-eval
+# soxr
+# pytorch-lightning
+# mir-eval

@@ -1,6 +1,6 @@
 from __gin__ import dynamic_registration
 
-include 'baseAE.gin'
+include 'AE_4096.gin'
 
 from after import autoencoder
 

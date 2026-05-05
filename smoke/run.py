@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SMOKE_DIR = Path(__file__).resolve().parent
 AE_GIN = SMOKE_DIR / "smoke.gin"
 DIFFUSION_GIN = SMOKE_DIR / "diffusion_smoke.gin"
-AFTER_BIN = REPO_ROOT / ".venv" / "bin" / "after"
+AFTER_BIN = Path(sys.executable).parent / "after"
 
 
 def _run(stage: str, args: list[str], device: str) -> None:
@@ -61,7 +61,7 @@ def _prepare_args_ae(input_path: str, dataset_dir: str) -> list[str]:
         "--input_path", input_path,
         "--output_path", dataset_dir,
         "--save_waveform", "True",
-        "--waveform_augmentation", "none",
+        "--num_augments", "0",
         "--device", "cpu",
     ]
 
@@ -69,11 +69,11 @@ def _prepare_args_ae(input_path: str, dataset_dir: str) -> list[str]:
 def _train_args_ae(dataset_dir: str, runs_dir: str, device: str) -> list[str]:
     return [
         "--name", "smoke_ae",
-        "--save_dir", runs_dir,
+        "--out_path", runs_dir,
         "--db_path", dataset_dir,
         "--config", str(AE_GIN),
-        "--bsize", "2",
-        "--num_signal", "65536",
+        "--batch_size", "2",
+        "--n_signal", "65536",
         "--device", device,
         "--num_workers", "0",
     ]
@@ -85,7 +85,7 @@ def _prepare_args_diffusion(input_path: str, dataset_dir: str,
         "--input_path", input_path,
         "--output_path", dataset_dir,
         "--emb_model_path", emb_model_path,
-        "--waveform_augmentation", "none",
+        "--num_augments", "0",
         "--device", "cpu",
     ]
 
@@ -98,7 +98,7 @@ def _train_args_diffusion(dataset_dir: str, runs_dir: str,
         "--db_path", dataset_dir,
         "--emb_model_path", emb_model_path,
         "--config", str(DIFFUSION_GIN),
-        "--bsize", "2",
+        "--batch_size", "2",
         "--n_signal", "32",
         "--device", device,
         "--num_workers", "0",
@@ -124,7 +124,7 @@ def main() -> None:
     if args.mode == "diffusion" and not args.emb_model_path:
         p.error("--emb_model_path is required for --mode diffusion")
     if not AFTER_BIN.exists():
-        p.error(f"Expected {AFTER_BIN} (run `pip install -e .` in the venv)")
+        p.error(f"Expected {AFTER_BIN} (run `pip install -e .` in your active environment)")
 
     output_dir = Path(args.output_dir).resolve() / args.mode
     dataset_dir = output_dir / "dataset"
