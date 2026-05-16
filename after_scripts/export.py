@@ -563,7 +563,7 @@ def main(argv):
             for i, t in enumerate(self.t_values_cache[:-1]):
                 t = t.repeat(x_last.shape[0])
 
-                x_last = x_last + dt * self.net(x_last,
+                x_last = x_last + dt * self.model_forward(x_last,
                                                 time=t,
                                                 cond=cond,
                                                 cache_index=i,
