@@ -112,11 +112,11 @@ def main(argv):
     if FLAGS.step is None:
         files = os.listdir(folder)
         files = [f for f in files if f.startswith("checkpoint")]
-        steps = [f.split("_")[-2].replace("checkpoint", "") for f in files]
+        steps = [f.split("checkpoint")[1].split(".")[0] for f in files]
         step = max([int(s) for s in steps])
-        checkpoint_file = "checkpoint" + str(step) + "_EMA.pt"
+        checkpoint_file = "checkpoint" + str(step) + ".pt"
     else:
-        checkpoint_file = "checkpoint" + str(FLAGS.step) + "_EMA.pt"
+        checkpoint_file = "checkpoint" + str(FLAGS.step) + ".pt"
 
     print("Using checkpoint at step : ", checkpoint_file)
 
