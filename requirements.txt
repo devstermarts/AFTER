@@ -1,6 +1,6 @@
 # Core ML / PyTorch
-torch==2.11
-torchaudio==2.11
+torch>=2.0
+torchaudio>=2.0
 torch-ema
 einops
 einops-exts
@@ -32,7 +32,7 @@ absl-py
 tqdm>=4.64.1
 pyyaml
 tensorboard
-matplotlib==3.11.1
+matplotlib>=3.8.3
 
 # Custom / export
 cached-conv>=2.5.0
@@ -40,6 +40,7 @@ nn-tilde
 packaging
 
 
-# Private
+# Private 
 # soxr
 # pytorch-lightning
+
