@@ -156,7 +156,7 @@ class Base(nn.Module):
             }
 
             torch.save(d,
-                       model_dir + "/checkpoint" + str(self.step) + "_EMA.pt")
+                       model_dir + "/checkpoint" + str(self.step) + ".pt")
 
     @gin.configurable
     def fit(self,
@@ -197,7 +197,7 @@ class Base(nn.Module):
 
         if restart_step is not None and restart_step > 0:
             state_dict = torch.load(f"{model_dir}/checkpoint" +
-                                    str(restart_step) + "_EMA.pt",
+                                    str(restart_step) + ".pt",
                                     map_location="cpu")
 
             self.load_state_dict(state_dict["model_state"], strict=False)
