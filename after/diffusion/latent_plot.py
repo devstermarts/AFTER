@@ -7,7 +7,7 @@ from sklearn.preprocessing import LabelEncoder
 import matplotlib.gridspec as gridspec
 
 import matplotlib.patches as mpatches
-from matplotlib import cm
+from matplotlib import colormaps #was: from matplotlib import cm
 from scipy.ndimage import gaussian_filter
 from matplotlib.colors import to_rgb
 from sklearn.model_selection import train_test_split
@@ -545,7 +545,7 @@ def generate_plot(embeddings,
     le = LabelEncoder()
     label_ids = le.fit_transform(labels)
     unique_labels = le.classes_
-    base_cmap = cm.get_cmap('tab10', len(unique_labels))
+    base_cmap = colormaps['tab10'].resampled(len(unique_labels)) #was: base_cmap = cm.get_cmap('tab10', len(unique_labels))
     # colors = [base_cmap(i)[:3] for i in range(len(unique_labels))]
 
     base_colors = [
